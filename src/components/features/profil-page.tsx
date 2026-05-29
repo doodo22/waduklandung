@@ -90,12 +90,11 @@ export function ProfilPage({ userId, familyId, isAdmin }: ProfilPageProps) {
         // Update auth store with new data
         const data = await res.json();
         if (data.user) {
-          // Update localStorage
-          const stored = localStorage.getItem('auth_user');
-          if (stored) {
-            const parsed = JSON.parse(stored);
-            const updated = { ...parsed, phone: data.user.phone, address: data.user.address };
-            localStorage.setItem('auth_user', JSON.stringify(updated));
+          // Update auth store properly instead of direct localStorage manipulation
+          const currentToken = localStorage.getItem('auth_token');
+          if (currentToken) {
+            const { setAuth } = useAuthStore.getState();
+            setAuth(data.user, currentToken);
           }
         }
         setTimeout(() => setSaved(false), 2000);

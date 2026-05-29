@@ -21,6 +21,15 @@ class ApiClient {
     return headers;
   }
 
+  private handleUnauthorized(res: Response): void {
+    if (res.status === 401 && typeof window !== 'undefined') {
+      localStorage.removeItem('auth_token');
+      localStorage.removeItem('auth_user');
+      // Reload to trigger auth store reset
+      window.location.reload();
+    }
+  }
+
   async get(path: string, options?: FetchOptions): Promise<Response> {
     const url = `${API_BASE}${path}`;
     const res = await fetch(url, {
@@ -28,6 +37,7 @@ class ApiClient {
       headers: this.getHeaders(),
       ...options,
     });
+    this.handleUnauthorized(res);
     return res;
   }
 
@@ -39,6 +49,7 @@ class ApiClient {
       body: body ? JSON.stringify(body) : undefined,
       ...options,
     });
+    this.handleUnauthorized(res);
     return res;
   }
 
@@ -50,6 +61,7 @@ class ApiClient {
       body: body ? JSON.stringify(body) : undefined,
       ...options,
     });
+    this.handleUnauthorized(res);
     return res;
   }
 
@@ -60,6 +72,7 @@ class ApiClient {
       headers: this.getHeaders(),
       ...options,
     });
+    this.handleUnauthorized(res);
     return res;
   }
 }

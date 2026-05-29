@@ -68,11 +68,8 @@ export function AkunPage({ userId, familyId, isAdmin }: AkunPageProps) {
   const [editStatus, setEditStatus] = useState('');
   const [saving, setSaving] = useState(false);
 
-  useEffect(() => {
-    loadUsers();
-  }, []);
-
   const loadUsers = async () => {
+    if (!isAdmin) return;
     try {
       setLoading(true);
       let url = '/users';
@@ -139,6 +136,19 @@ export function AkunPage({ userId, familyId, isAdmin }: AkunPageProps) {
     { value: 'REJECTED', label: 'Ditolak' },
     { value: 'INACTIVE', label: 'Tidak Aktif' },
   ];
+
+  // Admin guard - after all hooks
+  if (!isAdmin) {
+    return (
+      <div className="flex items-center justify-center py-12">
+        <Card className="rounded-xl shadow-sm border max-w-md w-full">
+          <CardContent className="p-6 text-center">
+            <p className="text-slate-500">Anda tidak memiliki akses ke halaman ini.</p>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
 
   if (loading && users.length === 0) {
     return (

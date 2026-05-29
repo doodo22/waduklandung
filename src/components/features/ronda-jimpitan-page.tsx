@@ -173,11 +173,11 @@ export function RondaJimpitanPage({ userId, familyId, isAdmin }: RondaJimpitanPa
       ]);
       if (groupsRes.ok) {
         const data = await groupsRes.json();
-        setRondaGroups(data);
+        setRondaGroups(Array.isArray(data) ? data : data.groups ?? []);
       }
       if (schedulesRes.ok) {
         const data = await schedulesRes.json();
-        setSchedules(data);
+        setSchedules(Array.isArray(data) ? data : data.schedules ?? []);
       }
     } catch {
       // silent
@@ -192,7 +192,7 @@ export function RondaJimpitanPage({ userId, familyId, isAdmin }: RondaJimpitanPa
       const res = await api.get('/jimpitan');
       if (res.ok) {
         const data = await res.json();
-        setJimpitanLogs(data);
+        setJimpitanLogs(Array.isArray(data) ? data : data.logs ?? []);
       }
     } catch {
       // silent
@@ -206,7 +206,7 @@ export function RondaJimpitanPage({ userId, familyId, isAdmin }: RondaJimpitanPa
       const res = await api.get('/families');
       if (res.ok) {
         const data = await res.json();
-        setFamilies(data);
+        setFamilies(Array.isArray(data) ? data : data.families ?? []);
       }
     } catch {
       // silent

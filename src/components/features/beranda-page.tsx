@@ -255,8 +255,7 @@ export function BerandaPage({ userId, familyId, isAdmin }: BerandaPageProps) {
           variant="outline"
           className="h-12 rounded-xl border-slate-200 justify-start gap-2 text-sm font-medium"
           onClick={() => {
-            // Navigate to letters — for now just show a toast or do nothing
-            // since letters page for warga isn't defined yet
+            setPage('surat');
           }}
         >
           <FileText className="w-4 h-4 text-slate-600" />

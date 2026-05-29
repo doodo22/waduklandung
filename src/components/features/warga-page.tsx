@@ -107,7 +107,7 @@ export function WargaPage({ userId, familyId, isAdmin }: WargaPageProps) {
       const res = await api.get('/families');
       if (res.ok) {
         const data = await res.json();
-        setFamilies(data);
+        setFamilies(Array.isArray(data) ? data : data.families ?? []);
       }
     } catch {
       // silent fail

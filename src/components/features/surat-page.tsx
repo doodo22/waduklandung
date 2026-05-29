@@ -39,7 +39,9 @@ import {
   Loader2,
   Inbox,
   User,
+  ArrowLeft,
 } from 'lucide-react';
+import { useNavStore } from '@/stores/nav-store';
 
 interface Letter {
   id: string;
@@ -217,11 +219,23 @@ export function SuratPage({ userId, familyId, isAdmin }: SuratPageProps) {
     <div className="space-y-6">
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <div>
-          <h2 className="text-xl font-semibold text-slate-800">Surat Pengantar</h2>
-          <p className="text-sm text-slate-500">
-            {isAdmin ? 'Kelola pengajuan surat warga' : 'Ajukan surat pengantar'}
-          </p>
+        <div className="flex items-center gap-3">
+          {!isAdmin && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-9 w-9 p-0 text-slate-400 hover:text-slate-700"
+              onClick={() => useNavStore.getState().setPage('beranda')}
+            >
+              <ArrowLeft className="w-4 h-4" />
+            </Button>
+          )}
+          <div>
+            <h2 className="text-xl font-semibold text-slate-800">Surat Pengantar</h2>
+            <p className="text-sm text-slate-500">
+              {isAdmin ? 'Kelola pengajuan surat warga' : 'Ajukan surat pengantar'}
+            </p>
+          </div>
         </div>
         {!isAdmin && (
           <Button
