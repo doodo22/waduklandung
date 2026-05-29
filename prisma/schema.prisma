@@ -1,0 +1,227 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================
+// USER & AUTH
+// ============================================
+
+model User {
+  id            String   @id @default(cuid())
+  username      String   @unique
+  password      String
+  name          String
+  role          String   @default("WARGA") // WARGA, KETUA_RT, SEKRETARIS, BENDAHARA, PENGURUS
+  status        String   @default("PENDING") // PENDING, ACTIVE, REJECTED, INACTIVE
+  phone         String?
+  address       String?
+  familyId      String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  family        Family?  @relation(fields: [familyId], references: [id])
+  rondaLogs     RondaLog[]
+  fines         Fine[]
+  letters       Letter[]
+  createdJimpitan JimpitanLog[] @relation("JimpitanCreator")
+}
+
+// ============================================
+// FAMILY (KELUARGA)
+// ============================================
+
+model Family {
+  id              String   @id @default(cuid())
+  familyHead      String   // Nama Kepala Keluarga
+  address         String
+  memberCount     Int      @default(1)
+  rondaGroup      String?  // Nama grup ronda
+  isActive        Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  members         User[]
+  jimpitanLogs    JimpitanLog[]
+  rondaLogs       RondaLog[]
+  fines           Fine[]
+}
+
+// ============================================
+// RONDA (SISKAMLING)
+// ============================================
+
+model RondaGroup {
+  id          String   @id @default(cuid())
+  name        String   @unique // Grup 1, Grup 2, etc.
+  description String?
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  schedules   RondaSchedule[]
+}
+
+model RondaSchedule {
+  id          String   @id @default(cuid())
+  groupId     String
+  date        String   // YYYY-MM-DD
+  shift       String   @default("MALAM") // MALAM, PAGI
+  notes       String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  group       RondaGroup @relation(fields: [groupId], references: [id])
+  logs        RondaLog[]
+}
+
+model RondaLog {
+  id          String   @id @default(cuid())
+  scheduleId  String
+  userId      String
+  familyId    String
+  status      String   @default("HADIR") // HADIR, TIDAK_HADIR, IZIN
+  notes       String?
+  createdAt   DateTime @default(now())
+
+  schedule    RondaSchedule @relation(fields: [scheduleId], references: [id])
+  user        User          @relation(fields: [userId], references: [id])
+  family      Family        @relation(fields: [familyId], references: [id])
+}
+
+// ============================================
+// JIMPITAN (IURAN HARIAN)
+// ============================================
+
+model JimpitanLog {
+  id          String   @id @default(cuid())
+  familyId    String
+  date        String   // YYYY-MM-DD
+  amount      Int      @default(0) // dalam Rupiah
+  isPaid      Boolean  @default(false)
+  notes       String?
+  createdBy   String   // userId
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  family      Family   @relation(fields: [familyId], references: [id])
+  creator     User     @relation("JimpitanCreator", fields: [createdBy], references: [id])
+}
+
+// ============================================
+// SELAPANAN (RAPAT 35 HARI)
+// ============================================
+
+model Selapanan {
+  id              String   @id @default(cuid())
+  periodeStart    String   // YYYY-MM-DD
+  periodeEnd      String   // YYYY-MM-DD
+  meetingDate     String   // YYYY-MM-DD (Sabtu malam Minggu Pon)
+  meetingLocation String?
+  status          String   @default("UPCOMING") // UPCOMING, COMPLETED, CANCELLED
+  notes           String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  details         SelapananDetail[]
+  transactions    Transaction[]
+}
+
+model SelapananDetail {
+  id              String   @id @default(cuid())
+  selapananId     String
+  agenda          String
+  decisions       String?  // Keputusan rapat
+  notes           String?
+  createdAt       DateTime @default(now())
+
+  selapanan       Selapanan @relation(fields: [selapananId], references: [id])
+}
+
+// ============================================
+// KEUANGAN
+// ============================================
+
+model Transaction {
+  id              String   @id @default(cuid())
+  type            String   // INCOME, EXPENSE
+  category        String   // IURAN_BULANAN, IURAN_RONDA, DENDA, JIMPITAN, PEMBELIAN, PEMBANGUNAN, LAIN_LAIN
+  amount          Int      // dalam Rupiah
+  description     String
+  date            String   // YYYY-MM-DD
+  selapananId     String?
+  createdBy       String   // userId
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  selapanan       Selapanan? @relation(fields: [selapananId], references: [id])
+}
+
+model Fine {
+  id          String   @id @default(cuid())
+  userId      String
+  familyId    String
+  type        String   // RONDA, JIMPITAN, LAIN_LAIN
+  amount      Int      // dalam Rupiah
+  reason      String
+  status      String   @default("UNPAID") // UNPAID, PAID
+  date        String   // YYYY-MM-DD
+  selapananId String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  user        User    @relation(fields: [userId], references: [id])
+  family      Family  @relation(fields: [familyId], references: [id])
+}
+
+// ============================================
+// PENGUMUMAN
+// ============================================
+
+model Announcement {
+  id          String   @id @default(cuid())
+  title       String
+  content     String
+  isPinned    Boolean  @default(false)
+  isActive    Boolean  @default(true)
+  createdBy   String   // userId
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+// ============================================
+// INVENTARIS
+// ============================================
+
+model Inventory {
+  id          String   @id @default(cuid())
+  name        String
+  quantity    Int      @default(1)
+  condition   String   @default("BAIK") // BAIK, RUSAK_RINGAN, RUSAK_BERAT
+  location    String?
+  notes       String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+// ============================================
+// SURAT PENGANTAR
+// ============================================
+
+model Letter {
+  id          String   @id @default(cuid())
+  letterNumber String?  // Nomor surat
+  type        String   // DOMISILI, PENGANTAR, KETERANGAN, LAIN_LAIN
+  purpose     String   // Keperluan surat
+  userId      String   // Pemohon
+  status      String   @default("PENDING") // PENDING, APPROVED, REJECTED, COMPLETED
+  notes       String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  user        User     @relation(fields: [userId], references: [id])
+}

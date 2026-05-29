@@ -1,0 +1,18 @@
+{
+  "name": "Management RT",
+  "short_name": "RT App",
+  "description": "Sistem Manajemen RT Digital",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f8fafc",
+  "theme_color": "#1e293b",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "/logo.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
