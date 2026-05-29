@@ -330,7 +330,8 @@ export function RondaJimpitanPage({ userId, familyId, isAdmin }: RondaJimpitanPa
 
   const handleTogglePaid = async (log: JimpitanLog) => {
     try {
-      const res = await api.put(`/jimpitan/${log.id}`, {
+      const res = await api.put('/jimpitan', {
+        id: log.id,
         isPaid: !log.isPaid,
       });
       if (res.ok) {

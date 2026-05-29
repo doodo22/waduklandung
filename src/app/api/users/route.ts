@@ -51,12 +51,33 @@ export async function PUT(request: NextRequest) {
   try {
     const authUser = await getAuthUser(request);
     if (!authUser) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    if (!isAdmin(authUser.role)) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
 
     const { id, role, status, name, phone, address, familyId } = await request.json();
 
     if (!id) return NextResponse.json({ error: 'ID wajib diisi' }, { status: 400 });
 
+    // Non-admin users can only update their own profile (phone/address only)
+    if (!isAdmin(authUser.role)) {
+      if (id !== authUser.id) {
+        return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+      }
+      // Only allow phone and address updates for non-admin users
+      const data: Record<string, unknown> = {};
+      if (phone !== undefined) data.phone = phone;
+      if (address !== undefined) data.address = address;
+
+      const user = await db.user.update({
+        where: { id },
+        data,
+        select: {
+          id: true, username: true, name: true, role: true,
+          status: true, phone: true, address: true, familyId: true,
+        },
+      });
+      return NextResponse.json({ user });
+    }
+
+    // Admin can update all fields
     const data: Record<string, unknown> = {};
     if (role !== undefined) data.role = role;
     if (status !== undefined) data.status = status;
@@ -69,14 +90,8 @@ export async function PUT(request: NextRequest) {
       where: { id },
       data,
       select: {
-        id: true,
-        username: true,
-        name: true,
-        role: true,
-        status: true,
-        phone: true,
-        address: true,
-        familyId: true,
+        id: true, username: true, name: true, role: true,
+        status: true, phone: true, address: true, familyId: true,
       },
     });
 

@@ -6,18 +6,33 @@ export async function GET(request: NextRequest) {
   try {
     const authUser = await getAuthUser(request);
     if (!authUser) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    if (!isAdmin(authUser.role)) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
 
-    const families = await db.family.findMany({
-      orderBy: { familyHead: 'asc' },
-      include: {
-        members: {
-          select: { id: true, name: true, role: true, status: true },
+    if (isAdmin(authUser.role)) {
+      // Admin: return all families
+      const families = await db.family.findMany({
+        orderBy: { familyHead: 'asc' },
+        include: {
+          members: {
+            select: { id: true, name: true, role: true, status: true },
+          },
         },
-      },
-    });
-
-    return NextResponse.json({ families });
+      });
+      return NextResponse.json({ families });
+    } else {
+      // Warga: return only their own family
+      if (authUser.familyId) {
+        const family = await db.family.findUnique({
+          where: { id: authUser.familyId },
+          include: {
+            members: {
+              select: { id: true, name: true, role: true, status: true },
+            },
+          },
+        });
+        return NextResponse.json({ families: family ? [family] : [] });
+      }
+      return NextResponse.json({ families: [] });
+    }
   } catch (error) {
     console.error('Families GET error:', error);
     return NextResponse.json({ error: 'Terjadi kesalahan server' }, { status: 500 });

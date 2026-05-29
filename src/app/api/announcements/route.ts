@@ -16,6 +16,9 @@ export async function GET(request: NextRequest) {
     const announcements = await db.announcement.findMany({
       where,
       orderBy: [{ isPinned: 'desc' }, { createdAt: 'desc' }],
+      include: {
+        author: { select: { id: true, name: true } },
+      },
       take: 50,
     });
 

@@ -150,7 +150,8 @@ export function WargaPage({ userId, familyId, isAdmin }: WargaPageProps) {
     if (!selectedFamily || !form.familyHead.trim() || !form.address.trim()) return;
     setSaving(true);
     try {
-      const res = await api.put(`/families/${selectedFamily.id}`, {
+      const res = await api.put('/families', {
+        id: selectedFamily.id,
         familyHead: form.familyHead,
         address: form.address,
         memberCount: form.memberCount,

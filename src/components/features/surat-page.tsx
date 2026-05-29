@@ -52,7 +52,7 @@ interface Letter {
   status: string;
   createdAt: string;
   updatedAt: string;
-  applicant?: {
+  user?: {
     id: string;
     name: string;
   };
@@ -132,7 +132,7 @@ export function SuratPage({ userId, familyId, isAdmin }: SuratPageProps) {
       !searchQuery ||
       letter.purpose.toLowerCase().includes(searchQuery.toLowerCase()) ||
       letter.letterNumber?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      letter.applicant?.name.toLowerCase().includes(searchQuery.toLowerCase());
+      letter.user?.name.toLowerCase().includes(searchQuery.toLowerCase());
     const matchStatus = filterStatus === 'ALL' || letter.status === filterStatus;
     const matchType = filterType === 'ALL' || letter.type === filterType;
     return matchSearch && matchStatus && matchType;
@@ -347,10 +347,10 @@ export function SuratPage({ userId, familyId, isAdmin }: SuratPageProps) {
 
                     <div className="text-sm text-slate-600 line-clamp-2">{letter.purpose}</div>
 
-                    {isAdmin && letter.applicant && (
+                    {isAdmin && letter.user && (
                       <div className="flex items-center gap-1.5 text-sm text-slate-500">
                         <User className="size-3.5" />
-                        <span>{letter.applicant.name}</span>
+                        <span>{letter.user.name}</span>
                       </div>
                     )}
 
@@ -493,8 +493,8 @@ export function SuratPage({ userId, familyId, isAdmin }: SuratPageProps) {
                   {LETTER_TYPE_LABELS[processingLetter.type] ?? processingLetter.type}
                 </div>
                 <div className="text-sm text-slate-600 line-clamp-2">{processingLetter.purpose}</div>
-                {processingLetter.applicant && (
-                  <div className="text-xs text-slate-500">Pemohon: {processingLetter.applicant.name}</div>
+                {processingLetter.user && (
+                  <div className="text-xs text-slate-500">Pemohon: {processingLetter.user.name}</div>
                 )}
               </div>
 

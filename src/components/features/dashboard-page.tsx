@@ -54,22 +54,24 @@ interface RecentAnnouncement {
   id: string;
   title: string;
   content: string;
-  date: string;
-  author: string;
+  createdAt: string;
+  isPinned: boolean;
+  author?: { name: string } | null;
 }
 
 interface TodayRonda {
   id: string;
   date: string;
   shift: string;
-  members: { id: string; name: string; status: string }[];
+  group: { id: string; name: string };
+  logs: { id: string; status: string; user: { name: string } }[];
 }
 
 interface UpcomingSelapanan {
   id: string;
-  date: string;
-  location: string;
-  description: string;
+  meetingDate: string;
+  meetingLocation: string | null;
+  notes: string | null;
   status: string;
 }
 
@@ -77,7 +79,7 @@ interface DashboardData {
   stats: DashboardStats;
   recentTransactions: RecentTransaction[];
   recentAnnouncements: RecentAnnouncement[];
-  todayRonda: TodayRonda | null;
+  todayRonda: TodayRonda[];
   upcomingSelapanan: UpcomingSelapanan | null;
 }
 
@@ -225,11 +227,12 @@ export function DashboardPage({ userId, familyId, isAdmin }: DashboardPageProps)
 
   if (!data) return null;
 
-  const { stats, recentTransactions, recentAnnouncements, todayRonda, upcomingSelapanan } = data;
+  const { stats, recentTransactions, recentAnnouncements, todayRonda = [], upcomingSelapanan } = data;
 
   // ---------- Render Helpers ----------
 
-  function formatStatValue(key: keyof DashboardStats, value: number): string {
+  function formatStatValue(key: keyof DashboardStats, value: number | undefined): string {
+    if (value === undefined || value === null) return '0';
     const config = STAT_CARDS.find((s) => s.key === key);
     if (config?.format === 'currency') return formatCurrency(value);
     return value.toLocaleString('id-ID');
@@ -344,9 +347,19 @@ export function DashboardPage({ userId, familyId, isAdmin }: DashboardPageProps)
                       <p className="text-xs text-slate-500 mt-1 line-clamp-2">{ann.content}</p>
                       <div className="flex items-center gap-2 mt-2">
                         <Clock className="h-3 w-3 text-slate-400" />
-                        <span className="text-xs text-slate-400">{formatDateShort(ann.date)}</span>
-                        <span className="text-xs text-slate-300">·</span>
-                        <span className="text-xs text-slate-400">{ann.author}</span>
+                        <span className="text-xs text-slate-400">{formatDateShort(ann.createdAt)}</span>
+                        {ann.author && (
+                          <>
+                            <span className="text-xs text-slate-300">·</span>
+                            <span className="text-xs text-slate-400">{ann.author.name}</span>
+                          </>
+                        )}
+                        {ann.isPinned && (
+                          <>
+                            <span className="text-xs text-slate-300">·</span>
+                            <Badge variant="secondary" className="text-[10px] px-1.5 py-0">Disematkan</Badge>
+                          </>
+                        )}
                       </div>
                     </div>
                   ))}
@@ -365,34 +378,42 @@ export function DashboardPage({ userId, familyId, isAdmin }: DashboardPageProps)
             </div>
           </CardHeader>
           <CardContent className="px-5 pb-5">
-            {!todayRonda ? (
+            {todayRonda.length === 0 ? (
               <p className="text-sm text-slate-400 py-4 text-center">Tidak ada jadwal ronda hari ini</p>
             ) : (
-              <div>
-                <div className="flex items-center gap-2 mb-3">
-                  <Badge variant="secondary" className="text-xs">
-                    {todayRonda.shift === 'MALAM' ? 'Malam' : 'Pagi'}
-                  </Badge>
-                  <span className="text-xs text-slate-400">{formatDateShort(todayRonda.date)}</span>
-                </div>
-                <div className="space-y-2">
-                  {todayRonda.members.map((m) => (
-                    <div key={m.id} className="flex items-center gap-3">
-                      <div className="flex h-7 w-7 items-center justify-center rounded-full bg-slate-100 text-xs font-medium text-slate-600">
-                        {m.name.charAt(0).toUpperCase()}
-                      </div>
-                      <span className="text-sm text-slate-700 flex-1">{m.name}</span>
-                      <Badge
-                        variant="outline"
-                        className={`text-[10px] px-1.5 py-0 ${
-                          STATUS_COLORS[m.status] || ''
-                        }`}
-                      >
-                        {RONDA_STATUS_LABELS[m.status] || m.status}
+              <div className="space-y-4">
+                {todayRonda.map((schedule) => (
+                  <div key={schedule.id}>
+                    <div className="flex items-center gap-2 mb-2">
+                      <Badge variant="secondary" className="text-xs">
+                        {schedule.shift === 'MALAM' ? 'Malam' : 'Pagi'}
                       </Badge>
+                      <span className="text-xs text-slate-500">{schedule.group?.name || 'Kelompok'}</span>
                     </div>
-                  ))}
-                </div>
+                    {schedule.logs.length === 0 ? (
+                      <p className="text-xs text-slate-400">Belum ada log ronda</p>
+                    ) : (
+                      <div className="space-y-2">
+                        {schedule.logs.map((log) => (
+                          <div key={log.id} className="flex items-center gap-3">
+                            <div className="flex h-7 w-7 items-center justify-center rounded-full bg-slate-100 text-xs font-medium text-slate-600">
+                              {log.user?.name?.charAt(0).toUpperCase() || '?'}
+                            </div>
+                            <span className="text-sm text-slate-700 flex-1">{log.user?.name || '-'}</span>
+                            <Badge
+                              variant="outline"
+                              className={`text-[10px] px-1.5 py-0 ${
+                                STATUS_COLORS[log.status] || ''
+                              }`}
+                            >
+                              {RONDA_STATUS_LABELS[log.status] || log.status}
+                            </Badge>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                ))}
               </div>
             )}
           </CardContent>
@@ -420,16 +441,16 @@ export function DashboardPage({ userId, familyId, isAdmin }: DashboardPageProps)
                   </Badge>
                 </div>
                 <p className="text-sm font-medium text-slate-700">
-                  {formatDateShort(upcomingSelapanan.date)}
+                  {formatDateShort(upcomingSelapanan.meetingDate)}
                 </p>
-                {upcomingSelapanan.location && (
+                {upcomingSelapanan.meetingLocation && (
                   <p className="text-xs text-slate-500 mt-1">
-                    Lokasi: {upcomingSelapanan.location}
+                    Lokasi: {upcomingSelapanan.meetingLocation}
                   </p>
                 )}
-                {upcomingSelapanan.description && (
+                {upcomingSelapanan.notes && (
                   <p className="text-xs text-slate-400 mt-1 line-clamp-2">
-                    {upcomingSelapanan.description}
+                    {upcomingSelapanan.notes}
                   </p>
                 )}
               </div>

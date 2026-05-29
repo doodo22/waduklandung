@@ -29,6 +29,7 @@ model User {
   fines         Fine[]
   letters       Letter[]
   createdJimpitan JimpitanLog[] @relation("JimpitanCreator")
+  announcements Announcement[] @relation("AnnouncementAuthor")
 }
 
 // ============================================
@@ -188,9 +189,11 @@ model Announcement {
   content     String
   isPinned    Boolean  @default(false)
   isActive    Boolean  @default(true)
-  createdBy   String   // userId
+  createdBy   String?  // userId
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+
+  author      User?    @relation("AnnouncementAuthor", fields: [createdBy], references: [id])
 }
 
 // ============================================

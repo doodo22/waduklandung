@@ -95,7 +95,7 @@ export function InventarisPage({ userId, familyId, isAdmin }: InventarisPageProp
       const res = await api.get('/inventory');
       if (res.ok) {
         const data = await res.json();
-        setItems(Array.isArray(data) ? data : data.items ?? []);
+        setItems(Array.isArray(data) ? data : data.inventory ?? []);
       }
     } catch {
       // silently fail
