@@ -8,24 +8,40 @@ export async function GET(request: NextRequest) {
     if (!authUser) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
     if (isAdmin(authUser.role)) {
-      // Admin: return all families
       const families = await db.family.findMany({
         orderBy: { familyHead: 'asc' },
         include: {
-          members: {
-            select: { id: true, name: true, role: true, status: true },
+          users: {
+            select: { id: true, name: true, role: true, status: true, phone: true },
+          },
+          familyMembers: {
+            orderBy: [
+              { isFamilyHead: 'desc' },
+              { createdAt: 'asc' },
+            ],
+          },
+          rondaGroup: {
+            select: { id: true, name: true, dayOfWeek: true },
           },
         },
       });
       return NextResponse.json({ families });
     } else {
-      // Warga: return only their own family
       if (authUser.familyId) {
         const family = await db.family.findUnique({
           where: { id: authUser.familyId },
           include: {
-            members: {
-              select: { id: true, name: true, role: true, status: true },
+            users: {
+              select: { id: true, name: true, role: true, status: true, phone: true },
+            },
+            familyMembers: {
+              orderBy: [
+                { isFamilyHead: 'desc' },
+                { createdAt: 'asc' },
+              ],
+            },
+            rondaGroup: {
+              select: { id: true, name: true, dayOfWeek: true },
             },
           },
         });
@@ -45,18 +61,32 @@ export async function POST(request: NextRequest) {
     if (!authUser) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     if (!isAdmin(authUser.role)) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
 
-    const { familyHead, address, memberCount, rondaGroup } = await request.json();
+    const { familyHead, address, rondaGroupId } = await request.json();
 
     if (!familyHead || !address) {
       return NextResponse.json({ error: 'Nama KK dan alamat wajib diisi' }, { status: 400 });
     }
 
+    // Create family + the KK member in one transaction
     const family = await db.family.create({
       data: {
         familyHead,
         address,
-        memberCount: memberCount || 1,
-        rondaGroup: rondaGroup || null,
+        rondaGroupId: rondaGroupId || null,
+        familyMembers: {
+          create: {
+            fullName: familyHead,
+            gender: 'LAKI_LAKI',
+            relationship: 'KEPALA_KELUARGA',
+            isFamilyHead: true,
+            maritalStatus: 'KAWIN',
+            citizenship: 'WNI',
+          },
+        },
+      },
+      include: {
+        familyMembers: true,
+        rondaGroup: { select: { id: true, name: true, dayOfWeek: true } },
       },
     });
 
@@ -73,18 +103,37 @@ export async function PUT(request: NextRequest) {
     if (!authUser) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     if (!isAdmin(authUser.role)) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
 
-    const { id, familyHead, address, memberCount, rondaGroup, isActive } = await request.json();
+    const { id, familyHead, address, rondaGroupId, isActive } = await request.json();
 
     if (!id) return NextResponse.json({ error: 'ID wajib diisi' }, { status: 400 });
 
     const data: Record<string, unknown> = {};
     if (familyHead !== undefined) data.familyHead = familyHead;
     if (address !== undefined) data.address = address;
-    if (memberCount !== undefined) data.memberCount = memberCount;
-    if (rondaGroup !== undefined) data.rondaGroup = rondaGroup;
+    if (rondaGroupId !== undefined) data.rondaGroupId = rondaGroupId || null;
     if (isActive !== undefined) data.isActive = isActive;
 
-    const family = await db.family.update({ where: { id }, data });
+    // If familyHead name changes, also update the KK member's fullName
+    if (familyHead) {
+      const headMember = await db.familyMember.findFirst({
+        where: { familyId: id, isFamilyHead: true },
+      });
+      if (headMember) {
+        await db.familyMember.update({
+          where: { id: headMember.id },
+          data: { fullName: familyHead },
+        });
+      }
+    }
+
+    const family = await db.family.update({
+      where: { id },
+      data,
+      include: {
+        familyMembers: { orderBy: [{ isFamilyHead: 'desc' }, { createdAt: 'asc' }] },
+        rondaGroup: { select: { id: true, name: true, dayOfWeek: true } },
+      },
+    });
 
     return NextResponse.json({ family });
   } catch (error) {

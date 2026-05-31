@@ -155,6 +155,66 @@ export const SELAPANAN_STATUS_LABELS: Record<string, string> = {
   CANCELLED: 'Dibatalkan',
 };
 
+// Family Member — Gender
+export const GENDER_OPTIONS = [
+  { value: 'LAKI_LAKI', label: 'Laki-laki' },
+  { value: 'PEREMPUAN', label: 'Perempuan' },
+] as const;
+
+// Family Member — Hubungan dalam Keluarga
+export const RELATIONSHIP_OPTIONS = [
+  { value: 'KEPALA_KELUARGA', label: 'Kepala Keluarga' },
+  { value: 'SUAMI_ISTRI', label: 'Suami/Istri' },
+  { value: 'ANAK', label: 'Anak' },
+  { value: 'MENANTU', label: 'Menantu' },
+  { value: 'CUCU', label: 'Cucu' },
+  { value: 'ORANG_TUA', label: 'Orang Tua' },
+  { value: 'MERTUA', label: 'Mertua' },
+  { value: 'FAMILI_LAIN', label: 'Famili Lain' },
+  { value: 'PEMBANTU', label: 'Pembantu' },
+  { value: 'LAINNYA', label: 'Lainnya' },
+] as const;
+
+export const RELATIONSHIP_LABELS: Record<string, string> = Object.fromEntries(
+  RELATIONSHIP_OPTIONS.map(o => [o.value, o.label])
+);
+
+// Family Member — Status Perkawinan
+export const MARITAL_STATUS_OPTIONS = [
+  { value: 'BELUM_KAWIN', label: 'Belum Kawin' },
+  { value: 'KAWIN', label: 'Kawin' },
+  { value: 'CERAI_HIDUP', label: 'Cerai Hidup' },
+  { value: 'CERAI_MATI', label: 'Cerai Mati' },
+] as const;
+
+export const MARITAL_STATUS_LABELS: Record<string, string> = Object.fromEntries(
+  MARITAL_STATUS_OPTIONS.map(o => [o.value, o.label])
+);
+
+// Family Member — Pendidikan Terakhir
+export const EDUCATION_OPTIONS = [
+  { value: 'TIDAK_SEKOLAH', label: 'Tidak Sekolah' },
+  { value: 'SD', label: 'SD' },
+  { value: 'SMP', label: 'SMP' },
+  { value: 'SMA', label: 'SMA/SMK' },
+  { value: 'D1', label: 'D1' },
+  { value: 'D2', label: 'D2' },
+  { value: 'D3', label: 'D3' },
+  { value: 'S1', label: 'S1/D4' },
+  { value: 'S2', label: 'S2' },
+  { value: 'S3', label: 'S3' },
+] as const;
+
+export const EDUCATION_LABELS: Record<string, string> = Object.fromEntries(
+  EDUCATION_OPTIONS.map(o => [o.value, o.label])
+);
+
+// Family Member — Kewarganegaraan
+export const CITIZENSHIP_OPTIONS = [
+  { value: 'WNI', label: 'WNI' },
+  { value: 'WNA', label: 'WNA' },
+] as const;
+
 // Pengurus roles that see admin dashboard
 export const ADMIN_ROLES = [ROLES.KETUA_RT, ROLES.SEKRETARIS, ROLES.BENDAHARA, ROLES.PENGURUS];
 

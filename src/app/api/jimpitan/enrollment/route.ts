@@ -15,6 +15,7 @@ export async function GET(request: NextRequest) {
       include: {
         jimpitanEnrollment: true,
         rondaGroup: { select: { id: true, name: true, dayOfWeek: true } },
+        _count: { select: { familyMembers: true } },
       },
     });
 
@@ -23,7 +24,7 @@ export async function GET(request: NextRequest) {
       id: family.id,
       familyHead: family.familyHead,
       address: family.address,
-      memberCount: family.memberCount,
+      memberCount: family._count.familyMembers,
       isActive: family.jimpitanEnrollment?.isActive ?? false,
       enrollmentId: family.jimpitanEnrollment?.id ?? null,
       enrolledAt: family.jimpitanEnrollment?.enrolledAt ?? null,

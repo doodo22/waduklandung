@@ -35,7 +35,8 @@ interface RondaGroup {
     id: string;
     familyHead: string;
     address: string;
-    memberCount: number;
+    memberCount?: number;
+    _count?: { familyMembers: number };
     rondaGroupId: string | null;
   }>;
 }

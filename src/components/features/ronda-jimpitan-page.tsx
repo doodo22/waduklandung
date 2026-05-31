@@ -61,7 +61,8 @@ interface RondaGroupFamily {
   id: string;
   familyHead: string;
   address: string;
-  memberCount: number;
+  memberCount?: number;
+  _count?: { familyMembers: number };
   rondaGroupId: string;
 }
 
@@ -78,7 +79,7 @@ interface EnrollmentFamily {
   id: string;
   familyHead: string;
   address: string;
-  memberCount: number;
+  memberCount?: number;
   isActive: boolean;
   enrollmentId: string | null;
   enrolledAt: string | null;

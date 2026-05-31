@@ -30,29 +30,56 @@ model User {
   letters       Letter[]
   createdJimpitan JimpitanLog[]   @relation("JimpitanCreator")
   announcements Announcement[]    @relation("AnnouncementAuthor")
+  familyMember  FamilyMember?
 }
 
 // ============================================
-// FAMILY (KELUARGA)
+// FAMILY (KELUARGA) — per Kepala Keluarga
 // ============================================
 
 model Family {
   id              String   @id @default(cuid())
-  familyHead      String   // Nama Kepala Keluarga
+  familyHead      String   // Nama Kepala Keluarga (denormalized for quick display)
   address         String
-  memberCount     Int      @default(1)
-  rondaGroupId    String?  // FK ke RondaGroup (relasi baru)
+  rondaGroupId    String?  // FK ke RondaGroup
   isActive        Boolean  @default(true)
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
-  members         User[]
+  users           User[]
   rondaGroup      RondaGroup?   @relation(fields: [rondaGroupId], references: [id])
   jimpitanLogs    JimpitanLog[]
   jimpitanEnrollment JimpitanEnrollment?
   rondaLogs       RondaLog[]
   fines           Fine[]
   shortages       JimpitanShortage[]
+  familyMembers   FamilyMember[]
+}
+
+// ============================================
+// FAMILY MEMBER — anggota keluarga (demografi lengkap)
+// ============================================
+
+model FamilyMember {
+  id                String   @id @default(cuid())
+  familyId          String
+  userId            String?  @unique // opsional: terhubung ke akun User jika punya HP
+  fullName          String
+  nik               String?  // Nomor Induk Kependudukan
+  gender            String   // LAKI_LAKI, PEREMPUAN
+  relationship      String   // KEPALA_KELUARGA, SUAMI_ISTRI, ANAK, MENANTU, CUCU, ORANG_TUA, MERTUA, FAMILI_LAIN, PEMBANTU, LAINNYA
+  maritalStatus     String?  // BELUM_KAWIN, KAWIN, CERAI_HIDUP, CERAI_MATI
+  birthPlace        String?  // Tempat lahir
+  birthDate         String?  // YYYY-MM-DD
+  education         String?  // TIDAK_SEKOLAH, SD, SMP, SMA, D1, D2, D3, S1, S2, S3
+  citizenship       String   @default("WNI") // WNI, WNA
+  occupation        String?  // Pekerjaan
+  isFamilyHead      Boolean  @default(false) // penanda cepat KK
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  family            Family   @relation(fields: [familyId], references: [id], onDelete: Cascade)
+  user              User?    @relation(fields: [userId], references: [id])
 }
 
 // ============================================
