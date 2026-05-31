@@ -24,3 +24,31 @@ Stage Summary:
 - Data syncs automatically (both admin and warga read from same API)
 - All APIs tested and working (families, family-members, ronda groups)
 - ESLint passes with 0 errors
+---
+Task ID: 1
+Agent: main
+Task: Redesign Data Warga layout to expandable row table
+
+Work Log:
+- Read current warga-page.tsx (two-panel layout: left list + right detail)
+- Read Prisma schema (Family, FamilyMember models already support all needed fields)
+- Read families API and family-members API (both working correctly)
+- Identified the layout problem: two-panel design wastes space for 70+ KK
+- Redesigned warga-page.tsx with expandable row table pattern:
+  - Desktop: Single table where each row is a KK, clicking expands to show family members in sub-table
+  - Mobile: Collapsible card pattern - tap card to expand member details
+- Added stats summary bar (Total KK, Total Warga, KK Aktif, KK Nonaktif)
+- Used React.Fragment for proper table row grouping (avoiding DOM nesting issues)
+- Used shadcn/ui Collapsible component for mobile cards
+- Removed unused ScrollArea and simplified state management (expandedFamilyIds Set instead of single selectedFamilyId)
+- Pre-populated membersMap from included familyMembers data for faster display
+- Fixed invalid HTML (colSpan on span element → className col-span-2)
+- Lint: 0 errors, 1 warning (pre-existing font warning)
+- Verified: API returns 11 families with members, server running fine
+
+Stage Summary:
+- warga-page.tsx fully rewritten with expandable row table layout
+- Much more compact - all 70+ KK visible at a glance
+- Click any row → expands to show family members underneath
+- Stats summary shows KK/Warga counts at top
+- Mobile uses collapsible cards with same expand/collapse pattern
