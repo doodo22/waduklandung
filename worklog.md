@@ -4,27 +4,20 @@ Agent: Main Agent
 Task: Build complete Management RT application
 
 Work Log:
-- Designed and implemented comprehensive Prisma database schema with 14 models (User, Family, RondaGroup, RondaSchedule, RondaLog, JimpitanLog, Selapanan, SelapananDetail, Transaction, Fine, Announcement, Inventory, Letter)
-- Built complete auth system with password hashing, token generation/verification, and API routes (login, register, me, logout)
-- Built all CRUD API routes for: users, families, ronda/groups, ronda/schedules, ronda/logs, jimpitan, selapanan, transactions, fines, announcements, inventory, letters, dashboard
+- Designed and implemented comprehensive Prisma database schema with 14 models
+- Built complete auth system with password hashing, token generation/verification
+- Built all CRUD API routes for all features
 - Created Zustand stores for auth state and navigation state
 - Created API client utility for frontend API calls
 - Built layout components: AppShell, Sidebar (desktop), BottomNav (mobile), Header
 - Built LoginPage with login/register toggle
-- Seeded database with admin user (username: admin, password: admin123) and sample data
-- Delegated feature page development to 5 parallel subagents
-- Fixed ESLint errors (require imports to proper ES imports)
-- Added PWA manifest.json
-- Updated globals.css with proper theme colors
-- Updated layout.tsx with Inter font and proper metadata
+- Seeded database with admin user and sample data
+- Delegated feature page development to parallel subagents
+- Fixed ESLint errors
 
 Stage Summary:
-- Full-stack application is running on port 3000
-- All 16 feature pages created and integrated
-- All API routes functional and tested
-- Database seeded with sample data
-- Login credentials: username=admin, password=admin123
-- ESLint passes with only 1 warning (font import, acceptable)
+- Full-stack application running on port 3000
+- Login: username=admin, password=admin123
 
 ---
 Task ID: 2
@@ -32,35 +25,59 @@ Agent: Main Agent
 Task: Fix critical runtime errors and API/frontend data shape mismatches
 
 Work Log:
-- Fixed original error: Cannot read properties of undefined (reading 'toLocaleString') in dashboard-page.tsx
-  - Root cause: API returned different key names than frontend expected
-  - Fixed API to return correct Indonesian key names matching frontend DashboardStats interface
-  - Added defensive null check in formatStatValue()
-- Fixed dashboard todayRonda: API returns array, frontend expected single object
-  - Updated TodayRonda interface to use array with logs instead of members
-  - Updated rendering to map over schedule array
-- Fixed dashboard upcomingSelapanan: field name mismatches (meetingDate vs date, etc.)
-- Fixed dashboard recentAnnouncements: createdAt vs date, added author relation
-  - Added author relation to Announcement model in Prisma schema
-  - Made createdBy/author optional (String?) to handle null values
-- Fixed ronda-jimpitan-page: PUT /jimpitan missing id in body
-- Fixed warga-page: PUT /families missing id in body
-- Fixed inventaris-page: reading data.items instead of data.inventory
-- Fixed families API: Warga users got 403 Forbidden
-  - Updated GET to return only user own family for non-admin users
-- Fixed surat-page: letter.applicant should be letter.user
-  - Updated interface and 3 usage sites from applicant to user
-- Fixed beranda-page: Admin dashboard returned different shape than warga dashboard
-  - Restructured dashboard API to always return warga-shaped data plus admin extras
-- Fixed profil-page: Non-admin users could not save profile (403 on PUT /users)
-  - Added exception for users editing their own profile (phone/address only)
-- Ran prisma db:push after schema changes
-- Verified all APIs work: login returns token, dashboard returns combined data
+- Fixed 9 critical runtime errors (dashboard, jimpitan, inventaris, surat, beranda, profil pages)
+- Added Announcement.author relation to Prisma schema
+- Restructured dashboard API to return consistent base + admin-specific data
+- Fixed API permissions for non-admin users
 
 Stage Summary:
-- Fixed 9 critical runtime errors that would crash the app
-- Fixed 3 API permission issues (families, users PUT, announcements author)
-- Prisma schema updated with Announcement.author relation (nullable)
-- Dashboard API restructured to return consistent base + admin-specific data
+- All critical crashes fixed, ESLint passes with 0 errors
+
+---
+Task ID: 3
+Agent: Main Agent
+Task: Implement Ronda & Jimpitan business logic per user's 10 rules
+
+Work Log:
+- Updated Prisma schema with new models:
+  - RondaGroup: added dayOfWeek (0=Minggu..6=Sabtu) for 7-night schedule
+  - Family: changed rondaGroup (String) to rondaGroupId (FK relation)
+  - JimpitanEnrollment: new model for opt-in daily payment
+  - JimpitanLog: added expectedAmount, paidAmount, shortage, groupId, selapananId; unique on familyId+date
+  - JimpitanShortage: new model for tracking per-family per-selapanan shortages with carry-over
+  - Settings: new model for configurable jimpitan amount and RT info
+- Seeded 7 default ronda groups (Grup 1 - Malam Minggu through Grup 7 - Malam Sabtu)
+- Seeded default settings (jimpitan_amount=1000)
+- Seeded sample families assigned to ronda groups
+- Seeded jimpitan enrollments for sample families
+- Built 6 new API routes:
+  - GET/POST /api/ronda/groups — group listing & member assignment
+  - GET/PUT/DELETE /api/ronda/groups/[id] — group detail
+  - GET/POST /api/jimpitan/enrollment — enrollment management
+  - GET/POST /api/jimpitan/collection — daily collection with Excel-like batch save
+  - GET/POST /api/jimpitan/shortages — shortage tracking with carry-over
+  - GET/PUT /api/settings — app settings management
+- Collection POST auto-determines: duty group from dayOfWeek, selapanan period, and recalculates shortages
+- Shortage settlement: creates Transaction records, handles carry-over to next selapanan
+- Rebuilt admin ronda-jimpitan page with 4 tabs:
+  - Tab 1: Grup Ronda — 7 groups with member management (add/move/remove KK)
+  - Tab 2: Daftar Jimpitan — enrollment toggle per KK
+  - Tab 3: Tarik Jimpitan — Excel-like collection form with [0][500][1000] quick-select buttons
+  - Tab 4: Kekurangan — shortage summary with settlement dialog
+- Updated warga mobile pages:
+  - ronda-page.tsx: shows user's group, monthly schedule, attendance
+  - iuran-page.tsx: jimpitan history, shortage alerts, info box about selapanan billing
+  - selapanan-page.tsx: upcoming meeting, shortage info, history
+- Updated pengaturan-page.tsx: configurable jimpitan amount, RT info settings
+- Updated app-shell.tsx: separate admin/warga page components with proper imports
+
+Stage Summary:
+- Complete Ronda & Jimpitan business logic implemented per user's 10 rules
+- 7 ronda groups mapped to days of week (Malam Minggu through Malam Sabtu)
+- Jimpitan enrollment system (opt-in per KK)
+- Daily collection with Excel-like [0][500][1000] quick-select form
+- Automatic shortage calculation and carry-over to next selapanan
+- Shortage settlement with Transaction recording
+- Configurable jimpitan amount (Rp 1000 default, changeable by admin)
 - ESLint passes with 0 errors
 - Dev server running on port 3000

@@ -24,12 +24,12 @@ model User {
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
-  family        Family?  @relation(fields: [familyId], references: [id])
+  family        Family?           @relation(fields: [familyId], references: [id])
   rondaLogs     RondaLog[]
   fines         Fine[]
   letters       Letter[]
-  createdJimpitan JimpitanLog[] @relation("JimpitanCreator")
-  announcements Announcement[] @relation("AnnouncementAuthor")
+  createdJimpitan JimpitanLog[]   @relation("JimpitanCreator")
+  announcements Announcement[]    @relation("AnnouncementAuthor")
 }
 
 // ============================================
@@ -41,30 +41,36 @@ model Family {
   familyHead      String   // Nama Kepala Keluarga
   address         String
   memberCount     Int      @default(1)
-  rondaGroup      String?  // Nama grup ronda
+  rondaGroupId    String?  // FK ke RondaGroup (relasi baru)
   isActive        Boolean  @default(true)
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
   members         User[]
+  rondaGroup      RondaGroup?   @relation(fields: [rondaGroupId], references: [id])
   jimpitanLogs    JimpitanLog[]
+  jimpitanEnrollment JimpitanEnrollment?
   rondaLogs       RondaLog[]
   fines           Fine[]
+  shortages       JimpitanShortage[]
 }
 
 // ============================================
-// RONDA (SISKAMLING)
+// RONDA (SISKAMLING) - 7 Grup, Malam Minggu s/d Malam Sabtu
 // ============================================
 
 model RondaGroup {
   id          String   @id @default(cuid())
-  name        String   @unique // Grup 1, Grup 2, etc.
+  name        String   @unique // Grup 1 - Malam Minggu, dst.
+  dayOfWeek   Int      // 0=Minggu, 1=Senin, 2=Selasa, 3=Rabu, 4=Kamis, 5=Jumat, 6=Sabtu
   description String?
   isActive    Boolean  @default(true)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  schedules   RondaSchedule[]
+  families       Family[]          // KK yang terdaftar di grup ini
+  schedules      RondaSchedule[]
+  jimpitanLogs   JimpitanLog[]    // jimpitan yang ditarik grup ini
 }
 
 model RondaSchedule {
@@ -98,19 +104,56 @@ model RondaLog {
 // JIMPITAN (IURAN HARIAN)
 // ============================================
 
-model JimpitanLog {
+// Enrollmen: KK yang memilih bayar harian
+model JimpitanEnrollment {
   id          String   @id @default(cuid())
-  familyId    String
-  date        String   // YYYY-MM-DD
-  amount      Int      @default(0) // dalam Rupiah
-  isPaid      Boolean  @default(false)
-  notes       String?
-  createdBy   String   // userId
-  createdAt   DateTime @default(now())
+  familyId    String   @unique
+  isActive    Boolean  @default(true)
+  enrolledAt  DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
   family      Family   @relation(fields: [familyId], references: [id])
-  creator     User     @relation("JimpitanCreator", fields: [createdBy], references: [id])
+}
+
+// Log harian: catatan per KK per hari
+model JimpitanLog {
+  id              String   @id @default(cuid())
+  familyId        String
+  date            String   // YYYY-MM-DD
+  expectedAmount  Int      // yang seharusnya dibayar (misal 1000)
+  paidAmount      Int      @default(0) // yang dibayar: 0, 500, 1000
+  shortage        Int      @default(0) // expectedAmount - paidAmount
+  groupId         String?  // grup ronda yang narik (otomatis dari hari)
+  selapananId     String?  // periode selapanan
+  notes           String?
+  createdBy       String   // userId yang mencatat
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  family          Family   @relation(fields: [familyId], references: [id])
+  creator         User     @relation("JimpitanCreator", fields: [createdBy], references: [id])
+  group           RondaGroup? @relation(fields: [groupId], references: [id])
+
+  @@unique([familyId, date]) // satu entry per KK per hari
+}
+
+// Kekurangan jimpitan per KK per Selapanan
+model JimpitanShortage {
+  id              String   @id @default(cuid())
+  familyId        String
+  selapananId     String
+  totalShortage   Int      @default(0) // total kekurangan di periode ini
+  isSettled       Boolean  @default(false) // apakah sudah dibayar di selapanan
+  settledAmount   Int      @default(0) // berapa yang dibayar saat selapanan
+  carriedOver     Boolean  @default(false) // apakah carry over ke selapanan berikutnya
+  notes           String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  family          Family     @relation(fields: [familyId], references: [id])
+  selapanan       Selapanan  @relation(fields: [selapananId], references: [id])
+
+  @@unique([familyId, selapananId]) // satu entry per KK per selapanan
 }
 
 // ============================================
@@ -130,6 +173,7 @@ model Selapanan {
 
   details         SelapananDetail[]
   transactions    Transaction[]
+  shortages       JimpitanShortage[]
 }
 
 model SelapananDetail {
@@ -227,4 +271,17 @@ model Letter {
   updatedAt   DateTime @updatedAt
 
   user        User     @relation(fields: [userId], references: [id])
+}
+
+// ============================================
+// SETTINGS (PENGATURAN)
+// ============================================
+
+model Settings {
+  id              String   @id @default(cuid())
+  key             String   @unique
+  value           String
+  description     String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 }

@@ -32,12 +32,20 @@ export async function GET(request: NextRequest) {
       take: 200,
     });
 
-    // Summary
-    const totalAmount = logs.reduce((sum, l) => sum + l.amount, 0);
-    const totalPaid = logs.filter((l) => l.isPaid).reduce((sum, l) => sum + l.amount, 0);
-    const totalUnpaid = totalAmount - totalPaid;
+    // Summary using correct schema fields
+    const totalExpected = logs.reduce((sum, l) => sum + l.expectedAmount, 0);
+    const totalPaid = logs.reduce((sum, l) => sum + l.paidAmount, 0);
+    const totalShortage = logs.reduce((sum, l) => sum + l.shortage, 0);
 
-    return NextResponse.json({ logs, summary: { totalAmount, totalPaid, totalUnpaid, count: logs.length } });
+    return NextResponse.json({
+      logs,
+      summary: {
+        totalAmount: totalExpected,
+        totalPaid,
+        totalUnpaid: totalShortage,
+        count: logs.length,
+      },
+    });
   } catch (error) {
     console.error('Jimpitan GET error:', error);
     return NextResponse.json({ error: 'Terjadi kesalahan server' }, { status: 500 });
@@ -50,8 +58,8 @@ export async function POST(request: NextRequest) {
     if (!authUser) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     if (!isAdmin(authUser.role)) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
 
-    const { familyId, date, amount, isPaid, notes } = await request.json();
-    if (!familyId || !date || amount === undefined) {
+    const { familyId, date, expectedAmount, paidAmount, shortage, notes } = await request.json();
+    if (!familyId || !date || expectedAmount === undefined) {
       return NextResponse.json({ error: 'Data tidak lengkap' }, { status: 400 });
     }
 
@@ -59,8 +67,9 @@ export async function POST(request: NextRequest) {
       data: {
         familyId,
         date,
-        amount,
-        isPaid: isPaid ?? false,
+        expectedAmount,
+        paidAmount: paidAmount ?? 0,
+        shortage: shortage ?? Math.max(0, expectedAmount - (paidAmount ?? 0)),
         notes,
         createdBy: authUser.id,
       },
@@ -79,12 +88,13 @@ export async function PUT(request: NextRequest) {
     if (!authUser) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     if (!isAdmin(authUser.role)) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
 
-    const { id, amount, isPaid, notes } = await request.json();
+    const { id, expectedAmount, paidAmount, shortage, notes } = await request.json();
     if (!id) return NextResponse.json({ error: 'ID wajib diisi' }, { status: 400 });
 
     const data: Record<string, unknown> = {};
-    if (amount !== undefined) data.amount = amount;
-    if (isPaid !== undefined) data.isPaid = isPaid;
+    if (expectedAmount !== undefined) data.expectedAmount = expectedAmount;
+    if (paidAmount !== undefined) data.paidAmount = paidAmount;
+    if (shortage !== undefined) data.shortage = shortage;
     if (notes !== undefined) data.notes = notes;
 
     const log = await db.jimpitanLog.update({ where: { id }, data });

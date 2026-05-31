@@ -1,13 +1,8 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { api } from '@/lib/api-client';
-import {
-  formatCurrency,
-  formatDateShort,
-  RONDA_STATUS_LABELS,
-  RONDA_SHIFT,
-} from '@/lib/constants';
+import { formatCurrency, formatDateShort } from '@/lib/constants';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -20,6 +15,7 @@ import {
   DialogHeader,
   DialogTitle,
   DialogFooter,
+  DialogDescription,
 } from '@/components/ui/dialog';
 import {
   Table,
@@ -36,80 +32,102 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { Separator } from '@/components/ui/separator';
 import {
   Shield,
-  Plus,
-  Calendar,
   Users,
   CheckCircle2,
   XCircle,
-  AlertCircle,
-  Clock,
   Wallet,
   CircleDollarSign,
+  ArrowRightLeft,
+  Trash2,
+  Plus,
+  Calendar,
+  Save,
+  Clock,
+  AlertTriangle,
+  ChevronDown,
   Banknote,
-  Edit3,
-  Search,
+  UserPlus,
 } from 'lucide-react';
+import { toast } from 'sonner';
 
 // ============================================
 // TYPES
 // ============================================
 
-interface RondaGroup {
-  id: string;
-  name: string;
-  description: string | null;
-  isActive: boolean;
-  createdAt: string;
-  updatedAt: string;
-}
-
-interface RondaSchedule {
-  id: string;
-  groupId: string;
-  date: string;
-  shift: string;
-  notes: string | null;
-  createdAt: string;
-  updatedAt: string;
-  group?: RondaGroup;
-  logs?: RondaLog[];
-}
-
-interface RondaLog {
-  id: string;
-  scheduleId: string;
-  userId: string;
-  familyId: string;
-  status: string;
-  notes: string | null;
-  createdAt: string;
-  user?: { id: string; name: string };
-  family?: { id: string; familyHead: string };
-}
-
-interface JimpitanLog {
-  id: string;
-  familyId: string;
-  date: string;
-  amount: number;
-  isPaid: boolean;
-  notes: string | null;
-  createdBy: string;
-  createdAt: string;
-  updatedAt: string;
-  family?: { id: string; familyHead: string };
-  creator?: { id: string; name: string };
-}
-
-interface Family {
+interface RondaGroupFamily {
   id: string;
   familyHead: string;
   address: string;
   memberCount: number;
-  rondaGroup: string | null;
+  rondaGroupId: string;
+}
+
+interface RondaGroup {
+  id: string;
+  name: string;
+  dayOfWeek: number;
+  description: string | null;
   isActive: boolean;
+  families: RondaGroupFamily[];
+}
+
+interface EnrollmentFamily {
+  id: string;
+  familyHead: string;
+  address: string;
+  memberCount: number;
+  isActive: boolean;
+  enrollmentId: string | null;
+  enrolledAt: string | null;
+}
+
+interface CollectionEntry {
+  familyId: string;
+  familyHead: string;
+  expectedAmount: number;
+  paidAmount: number;
+  shortage: number;
+  notes: string | null;
+  logId: string | null;
+}
+
+interface CollectionData {
+  date: string;
+  group: { id: string; name: string; dayOfWeek: number } | null;
+  jimpitanAmount: number;
+  entries: CollectionEntry[];
+  summary: {
+    totalFamilies: number;
+    totalExpected: number;
+    totalPaid: number;
+    totalShortage: number;
+  };
+}
+
+interface ShortageEntry {
+  familyId: string;
+  familyHead: string;
+  totalShortage: number;
+  settledAmount: number;
+  isSettled: boolean;
+  carriedOver: boolean;
+  notes: string | null;
+}
+
+interface ShortageSummary {
+  selapananId: string;
+  periodeStart: string;
+  periodeEnd: string;
+  status: string;
+  totalShortage: number;
+  totalSettled: number;
+  totalRemaining: number;
+  familyCount: number;
+  unsettledCount: number;
+  shortages: ShortageEntry[];
 }
 
 interface RondaJimpitanPageProps {
@@ -119,284 +137,414 @@ interface RondaJimpitanPageProps {
 }
 
 // ============================================
+// DAY HELPERS
+// ============================================
+
+const DAY_NAMES: Record<number, string> = {
+  0: 'Minggu', 1: 'Senin', 2: 'Selasa', 3: 'Rabu',
+  4: 'Kamis', 5: 'Jumat', 6: 'Sabtu',
+};
+
+const DAY_LABELS: Record<number, string> = {
+  0: 'Sabtu malam', 1: 'Minggu malam', 2: 'Senin malam',
+  3: 'Selasa malam', 4: 'Rabu malam', 5: 'Kamis malam', 6: 'Jumat malam',
+};
+
+const JIMPITAN_QUICK_VALUES = [0, 500, 1000];
+
+// ============================================
 // COMPONENT
 // ============================================
 
 export function RondaJimpitanPage({ userId, familyId, isAdmin }: RondaJimpitanPageProps) {
-  // ---- Ronda State ----
-  const [rondaGroups, setRondaGroups] = useState<RondaGroup[]>([]);
-  const [schedules, setSchedules] = useState<RondaSchedule[]>([]);
-  const [families, setFamilies] = useState<Family[]>([]);
-  const [loadingRonda, setLoadingRonda] = useState(true);
-  const [showAddGroupDialog, setShowAddGroupDialog] = useState(false);
-  const [showAddScheduleDialog, setShowAddScheduleDialog] = useState(false);
-  const [showAttendanceDialog, setShowAttendanceDialog] = useState(false);
-  const [selectedSchedule, setSelectedSchedule] = useState<RondaSchedule | null>(null);
-  const [saving, setSaving] = useState(false);
+  // ---- Tab state ----
+  const [activeTab, setActiveTab] = useState('groups');
 
-  const [groupForm, setGroupForm] = useState({ name: '', description: '' });
-  const [scheduleForm, setScheduleForm] = useState({
-    groupId: '',
-    date: '',
-    shift: 'MALAM',
-    notes: '',
-  });
-  const [attendanceForm, setAttendanceForm] = useState({
-    familyId: '',
-    status: 'HADIR',
-    notes: '',
-  });
+  // ---- Tab 1: Grup Ronda ----
+  const [groups, setGroups] = useState<RondaGroup[]>([]);
+  const [allFamilies, setAllFamilies] = useState<RondaGroupFamily[]>([]);
+  const [loadingGroups, setLoadingGroups] = useState(true);
+  const [manageGroup, setManageGroup] = useState<RondaGroup | null>(null);
+  const [showManageDialog, setShowManageDialog] = useState(false);
+  const [showMoveDialog, setShowMoveDialog] = useState(false);
+  const [movingFamily, setMovingFamily] = useState<RondaGroupFamily | null>(null);
+  const [targetGroupId, setTargetGroupId] = useState('');
+  const [addFamilyId, setAddFamilyId] = useState('');
+  const [savingGroup, setSavingGroup] = useState(false);
 
-  // ---- Jimpitan State ----
-  const [jimpitanLogs, setJimpitanLogs] = useState<JimpitanLog[]>([]);
-  const [loadingJimpitan, setLoadingJimpitan] = useState(true);
-  const [showAddJimpitanDialog, setShowAddJimpitanDialog] = useState(false);
-  const [jimpitanForm, setJimpitanForm] = useState({
-    familyId: '',
-    date: new Date().toISOString().split('T')[0],
-    amount: 0,
-    isPaid: false,
-    notes: '',
-  });
-  const [jimpitanSearch, setJimpitanSearch] = useState('');
+  // ---- Tab 2: Daftar Jimpitan ----
+  const [enrollmentFamilies, setEnrollmentFamilies] = useState<EnrollmentFamily[]>([]);
+  const [loadingEnrollment, setLoadingEnrollment] = useState(true);
+  const [enrollmentSearch, setEnrollmentSearch] = useState('');
+  const [togglingEnrollment, setTogglingEnrollment] = useState<string | null>(null);
+
+  // ---- Tab 3: Tarik Jimpitan ----
+  const [collectionDate, setCollectionDate] = useState(
+    () => new Date().toISOString().split('T')[0]
+  );
+  const [collectionData, setCollectionData] = useState<CollectionData | null>(null);
+  const [loadingCollection, setLoadingCollection] = useState(false);
+  const [editedEntries, setEditedEntries] = useState<Map<string, { paidAmount: number; notes: string }>>(new Map());
+  const [savingCollection, setSavingCollection] = useState(false);
+
+  // ---- Tab 4: Kekurangan ----
+  const [shortageSummary, setShortageSummary] = useState<ShortageSummary[]>([]);
+  const [loadingShortage, setLoadingShortage] = useState(true);
+  const [selectedSelapananId, setSelectedSelapananId] = useState<string>('all');
+  const [showSettleDialog, setShowSettleDialog] = useState(false);
+  const [settlingShortage, setSettlingShortage] = useState<ShortageEntry & { selapananId: string } | null>(null);
+  const [settleAmount, setSettleAmount] = useState(0);
+  const [savingSettle, setSavingSettle] = useState(false);
 
   // ----------------------------------------
-  // Data fetching
+  // Data Fetching
   // ----------------------------------------
 
-  const fetchRondaData = useCallback(async () => {
-    setLoadingRonda(true);
+  const fetchGroups = useCallback(async () => {
+    setLoadingGroups(true);
     try {
-      const [groupsRes, schedulesRes] = await Promise.all([
-        api.get('/ronda/groups'),
-        api.get('/ronda/schedules'),
-      ]);
-      if (groupsRes.ok) {
-        const data = await groupsRes.json();
-        setRondaGroups(Array.isArray(data) ? data : data.groups ?? []);
-      }
-      if (schedulesRes.ok) {
-        const data = await schedulesRes.json();
-        setSchedules(Array.isArray(data) ? data : data.schedules ?? []);
+      const res = await api.get('/ronda/groups');
+      if (res.ok) {
+        const data = await res.json();
+        const groupList: RondaGroup[] = data.groups ?? [];
+        setGroups(groupList);
+
+        // Also fetch all families for the unassigned dropdown
+        const famRes = await api.get('/families');
+        if (famRes.ok) {
+          const famData = await famRes.json();
+          const famList: RondaGroupFamily[] = (Array.isArray(famData) ? famData : famData.families ?? [])
+            .filter((f: { isActive?: boolean }) => f.isActive !== false);
+          setAllFamilies(famList);
+        }
       }
     } catch {
       // silent
     } finally {
-      setLoadingRonda(false);
+      setLoadingGroups(false);
     }
   }, []);
 
-  const fetchJimpitanData = useCallback(async () => {
-    setLoadingJimpitan(true);
+  const fetchEnrollment = useCallback(async () => {
+    setLoadingEnrollment(true);
     try {
-      const res = await api.get('/jimpitan');
+      const res = await api.get('/jimpitan/enrollment');
       if (res.ok) {
         const data = await res.json();
-        setJimpitanLogs(Array.isArray(data) ? data : data.logs ?? []);
+        setEnrollmentFamilies(data.families ?? []);
       }
     } catch {
       // silent
     } finally {
-      setLoadingJimpitan(false);
+      setLoadingEnrollment(false);
     }
   }, []);
 
-  const fetchFamilies = useCallback(async () => {
+  const fetchCollection = useCallback(async () => {
+    setLoadingCollection(true);
     try {
-      const res = await api.get('/families');
+      const res = await api.get(`/jimpitan/collection?date=${collectionDate}`);
       if (res.ok) {
-        const data = await res.json();
-        setFamilies(Array.isArray(data) ? data : data.families ?? []);
+        const data: CollectionData = await res.json();
+        setCollectionData(data);
+        setEditedEntries(new Map());
       }
     } catch {
       // silent
+    } finally {
+      setLoadingCollection(false);
+    }
+  }, [collectionDate]);
+
+  const fetchShortages = useCallback(async () => {
+    setLoadingShortage(true);
+    try {
+      const res = await api.get('/jimpitan/shortages');
+      if (res.ok) {
+        const data = await res.json();
+        setShortageSummary(data.summary ?? []);
+      }
+    } catch {
+      // silent
+    } finally {
+      setLoadingShortage(false);
     }
   }, []);
 
   useEffect(() => {
-    fetchRondaData();
-    fetchJimpitanData();
-    fetchFamilies();
-  }, [fetchRondaData, fetchJimpitanData, fetchFamilies]);
+    fetchGroups();
+    fetchEnrollment();
+    fetchShortages();
+  }, [fetchGroups, fetchEnrollment, fetchShortages]);
+
+  useEffect(() => {
+    fetchCollection();
+  }, [fetchCollection]);
 
   // ----------------------------------------
-  // Ronda Handlers
+  // Tab 1: Grup Ronda Handlers
   // ----------------------------------------
 
-  const handleAddGroup = async () => {
-    if (!groupForm.name.trim()) return;
-    setSaving(true);
+  const openManageDialog = (group: RondaGroup) => {
+    setManageGroup(group);
+    setAddFamilyId('');
+    setShowManageDialog(true);
+  };
+
+  const unassignedFamilies = useMemo(() => {
+    const assignedIds = new Set<string>();
+    groups.forEach(g => g.families.forEach(f => assignedIds.add(f.id)));
+    return allFamilies.filter(f => !assignedIds.has(f.id));
+  }, [allFamilies, groups]);
+
+  const handleAddFamilyToGroup = async () => {
+    if (!addFamilyId || !manageGroup) return;
+    setSavingGroup(true);
     try {
-      const res = await api.post('/ronda/groups', {
-        name: groupForm.name,
-        description: groupForm.description || null,
-      });
+      const res = await api.post('/ronda/groups', { familyId: addFamilyId, groupId: manageGroup.id });
       if (res.ok) {
-        setShowAddGroupDialog(false);
-        setGroupForm({ name: '', description: '' });
-        fetchRondaData();
+        toast.success('Anggota berhasil ditambahkan');
+        setAddFamilyId('');
+        await fetchGroups();
+        // Update manageGroup from refreshed data
+        const updatedGroup = groups.find(g => g.id === manageGroup.id);
+        if (updatedGroup) setManageGroup(updatedGroup);
+      } else {
+        toast.error('Gagal menambahkan anggota');
       }
     } catch {
-      // silent
+      toast.error('Terjadi kesalahan');
     } finally {
-      setSaving(false);
+      setSavingGroup(false);
     }
   };
 
-  const handleAddSchedule = async () => {
-    if (!scheduleForm.groupId || !scheduleForm.date) return;
-    setSaving(true);
+  const handleMoveFamily = (family: RondaGroupFamily) => {
+    setMovingFamily(family);
+    setTargetGroupId('');
+    setShowMoveDialog(true);
+  };
+
+  const handleConfirmMove = async () => {
+    if (!movingFamily || !targetGroupId) return;
+    setSavingGroup(true);
     try {
-      const res = await api.post('/ronda/schedules', {
-        groupId: scheduleForm.groupId,
-        date: scheduleForm.date,
-        shift: scheduleForm.shift,
-        notes: scheduleForm.notes || null,
-      });
+      const res = await api.post('/ronda/groups', { familyId: movingFamily.id, groupId: targetGroupId });
       if (res.ok) {
-        setShowAddScheduleDialog(false);
-        setScheduleForm({ groupId: '', date: '', shift: 'MALAM', notes: '' });
-        fetchRondaData();
+        toast.success('Anggota berhasil dipindahkan');
+        setShowMoveDialog(false);
+        setMovingFamily(null);
+        setTargetGroupId('');
+        await fetchGroups();
+      } else {
+        toast.error('Gagal memindahkan anggota');
       }
     } catch {
-      // silent
+      toast.error('Terjadi kesalahan');
     } finally {
-      setSaving(false);
+      setSavingGroup(false);
     }
   };
 
-  const handleMarkAttendance = async () => {
-    if (!selectedSchedule || !attendanceForm.familyId) return;
-    setSaving(true);
+  const handleRemoveFromGroup = async (familyId: string) => {
+    if (!manageGroup) return;
+    setSavingGroup(true);
     try {
-      const res = await api.post('/ronda/logs', {
-        scheduleId: selectedSchedule.id,
-        userId: userId,
-        familyId: attendanceForm.familyId,
-        status: attendanceForm.status,
-        notes: attendanceForm.notes || null,
-      });
+      // To remove from group, we assign to a special "null" group
+      // We'll use a different approach: set rondaGroupId to null
+      // The API expects familyId + groupId; we need an endpoint to unassign
+      // Let's post with groupId as empty string as a convention
+      // Actually, let's check if there's a direct way...
+      // Since the API only supports assignment, we'll need to handle removal differently
+      // For now, we can POST to a special endpoint or use PUT /families
+      const res = await api.put('/families', { id: familyId, rondaGroupId: null });
       if (res.ok) {
-        setShowAttendanceDialog(false);
-        setAttendanceForm({ familyId: '', status: 'HADIR', notes: '' });
-        setSelectedSchedule(null);
-        fetchRondaData();
+        toast.success('Anggota berhasil dihapus dari grup');
+        await fetchGroups();
+      } else {
+        toast.error('Gagal menghapus anggota dari grup');
       }
     } catch {
-      // silent
+      toast.error('Terjadi kesalahan');
     } finally {
-      setSaving(false);
+      setSavingGroup(false);
     }
   };
 
-  const openAttendanceDialog = (schedule: RondaSchedule) => {
-    setSelectedSchedule(schedule);
-    setAttendanceForm({ familyId: '', status: 'HADIR', notes: '' });
-    setShowAttendanceDialog(true);
-  };
-
   // ----------------------------------------
-  // Jimpitan Handlers
+  // Tab 2: Enrollment Handlers
   // ----------------------------------------
 
-  const handleAddJimpitan = async () => {
-    if (!jimpitanForm.familyId || !jimpitanForm.date || jimpitanForm.amount <= 0) return;
-    setSaving(true);
+  const handleToggleEnrollment = async (family: EnrollmentFamily) => {
+    setTogglingEnrollment(family.id);
     try {
-      const res = await api.post('/jimpitan', {
-        familyId: jimpitanForm.familyId,
-        date: jimpitanForm.date,
-        amount: jimpitanForm.amount,
-        isPaid: jimpitanForm.isPaid,
-        notes: jimpitanForm.notes || null,
+      const res = await api.post('/jimpitan/enrollment', {
+        familyId: family.id,
+        isActive: !family.isActive,
       });
       if (res.ok) {
-        setShowAddJimpitanDialog(false);
-        setJimpitanForm({
-          familyId: '',
-          date: new Date().toISOString().split('T')[0],
-          amount: 0,
-          isPaid: false,
-          notes: '',
-        });
-        fetchJimpitanData();
+        toast.success(family.isActive ? 'Jimpitan dinonaktifkan' : 'Jimpitan diaktifkan');
+        await fetchEnrollment();
+      } else {
+        toast.error('Gagal mengubah status jimpitan');
       }
     } catch {
-      // silent
+      toast.error('Terjadi kesalahan');
     } finally {
-      setSaving(false);
+      setTogglingEnrollment(null);
     }
   };
 
-  const handleTogglePaid = async (log: JimpitanLog) => {
-    try {
-      const res = await api.put('/jimpitan', {
-        id: log.id,
-        isPaid: !log.isPaid,
-      });
-      if (res.ok) {
-        fetchJimpitanData();
-      }
-    } catch {
-      // silent
-    }
-  };
-
-  // ----------------------------------------
-  // Jimpitan Summary
-  // ----------------------------------------
-
-  const jimpitanSummary = {
-    total: jimpitanLogs.reduce((sum, l) => sum + l.amount, 0),
-    paid: jimpitanLogs.filter(l => l.isPaid).reduce((sum, l) => sum + l.amount, 0),
-    unpaid: jimpitanLogs.filter(l => !l.isPaid).reduce((sum, l) => sum + l.amount, 0),
-  };
-
-  // ----------------------------------------
-  // Filtered jimpitan
-  // ----------------------------------------
-
-  const filteredJimpitanLogs = jimpitanLogs.filter(l => {
-    const q = jimpitanSearch.toLowerCase();
-    if (!q) return true;
-    return (
-      (l.family?.familyHead || '').toLowerCase().includes(q) ||
-      l.date.includes(q)
+  const filteredEnrollmentFamilies = useMemo(() => {
+    if (!enrollmentSearch) return enrollmentFamilies;
+    const q = enrollmentSearch.toLowerCase();
+    return enrollmentFamilies.filter(
+      f => f.familyHead.toLowerCase().includes(q) || f.address.toLowerCase().includes(q)
     );
-  });
+  }, [enrollmentFamilies, enrollmentSearch]);
 
   // ----------------------------------------
-  // Shift badge helper
+  // Tab 3: Collection Handlers
   // ----------------------------------------
 
-  const shiftBadge = (shift: string) => {
-    const isMalam = shift === 'MALAM';
-    return (
-      <Badge
-        variant="secondary"
-        className={`text-xs ${isMalam ? 'bg-slate-700 text-white' : 'bg-amber-100 text-amber-800'}`}
-      >
-        <Clock className="w-3 h-3 mr-1" />
-        {isMalam ? 'Malam' : 'Pagi'}
-      </Badge>
-    );
+  const getEntryPaidAmount = (entry: CollectionEntry): number => {
+    const edited = editedEntries.get(entry.familyId);
+    return edited?.paidAmount ?? entry.paidAmount;
   };
 
-  const statusIcon = (status: string) => {
-    switch (status) {
-      case 'HADIR':
-        return <CheckCircle2 className="w-4 h-4 text-emerald-500" />;
-      case 'TIDAK_HADIR':
-        return <XCircle className="w-4 h-4 text-red-500" />;
-      case 'IZIN':
-        return <AlertCircle className="w-4 h-4 text-amber-500" />;
-      default:
-        return null;
+  const getEntryNotes = (entry: CollectionEntry): string => {
+    const edited = editedEntries.get(entry.familyId);
+    return edited?.notes ?? entry.notes ?? '';
+  };
+
+  const setEntryPaidAmount = (familyId: string, amount: number) => {
+    setEditedEntries(prev => {
+      const next = new Map(prev);
+      const existing = next.get(familyId);
+      next.set(familyId, { paidAmount: amount, notes: existing?.notes ?? '' });
+      return next;
+    });
+  };
+
+  const setEntryNotes = (familyId: string, notes: string) => {
+    setEditedEntries(prev => {
+      const next = new Map(prev);
+      const existing = next.get(familyId);
+      next.set(familyId, { paidAmount: existing?.paidAmount ?? 0, notes });
+      return next;
+    });
+  };
+
+  const getStatusBadge = (paid: number, expected: number) => {
+    if (paid === 0) return <Badge className="bg-red-100 text-red-700 hover:bg-red-100 text-xs">Kosong</Badge>;
+    if (paid < expected) return <Badge className="bg-amber-100 text-amber-700 hover:bg-amber-100 text-xs">Kurang</Badge>;
+    return <Badge className="bg-emerald-100 text-emerald-700 hover:bg-emerald-100 text-xs">Lunas</Badge>;
+  };
+
+  const computedSummary = useMemo(() => {
+    if (!collectionData) return { totalFamilies: 0, totalPaid: 0, totalShortage: 0 };
+    const entries = collectionData.entries;
+    let totalPaid = 0;
+    let totalShortage = 0;
+    for (const entry of entries) {
+      const paid = getEntryPaidAmount(entry);
+      const shortage = Math.max(0, entry.expectedAmount - paid);
+      totalPaid += paid;
+      totalShortage += shortage;
+    }
+    return {
+      totalFamilies: entries.length,
+      totalPaid,
+      totalShortage,
+    };
+  }, [collectionData, editedEntries]);
+
+  const handleSaveCollection = async () => {
+    if (!collectionData) return;
+    setSavingCollection(true);
+    try {
+      const entries = collectionData.entries.map(entry => {
+        const edited = editedEntries.get(entry.familyId);
+        return {
+          familyId: entry.familyId,
+          paidAmount: edited?.paidAmount ?? entry.paidAmount,
+          notes: edited?.notes ?? entry.notes ?? null,
+        };
+      });
+
+      const res = await api.post('/jimpitan/collection', {
+        date: collectionDate,
+        entries,
+      });
+
+      if (res.ok) {
+        toast.success('Data jimpitan berhasil disimpan');
+        await fetchCollection();
+      } else {
+        toast.error('Gagal menyimpan data jimpitan');
+      }
+    } catch {
+      toast.error('Terjadi kesalahan');
+    } finally {
+      setSavingCollection(false);
     }
   };
 
   // ----------------------------------------
-  // Loading state
+  // Tab 4: Shortage Handlers
+  // ----------------------------------------
+
+  const flattenedShortages = useMemo(() => {
+    if (selectedSelapananId === 'all') {
+      return shortageSummary.flatMap(s =>
+        s.shortages.map(sh => ({ ...sh, selapananId: s.selapananId, periodeStart: s.periodeStart, periodeEnd: s.periodeEnd }))
+      );
+    }
+    const selected = shortageSummary.find(s => s.selapananId === selectedSelapananId);
+    if (!selected) return [];
+    return selected.shortages.map(sh => ({ ...sh, selapananId: selected.selapananId, periodeStart: selected.periodeStart, periodeEnd: selected.periodeEnd }));
+  }, [shortageSummary, selectedSelapananId]);
+
+  const getShortageStatusBadge = (entry: ShortageEntry) => {
+    if (entry.isSettled) return <Badge className="bg-emerald-100 text-emerald-700 hover:bg-emerald-100 text-xs">Lunas</Badge>;
+    if (entry.settledAmount > 0) return <Badge className="bg-amber-100 text-amber-700 hover:bg-amber-100 text-xs">Dibayar Sebagian</Badge>;
+    return <Badge className="bg-red-100 text-red-700 hover:bg-red-100 text-xs">Belum Bayar</Badge>;
+  };
+
+  const openSettleDialog = (entry: ShortageEntry & { selapananId: string }) => {
+    setSettlingShortage(entry);
+    setSettleAmount(entry.totalShortage - entry.settledAmount);
+    setShowSettleDialog(true);
+  };
+
+  const handleSettleShortage = async () => {
+    if (!settlingShortage || settleAmount <= 0) return;
+    setSavingSettle(true);
+    try {
+      const res = await api.post('/jimpitan/shortages', {
+        selapananId: settlingShortage.selapananId,
+        settlements: [{
+          familyId: settlingShortage.familyId,
+          settledAmount: settleAmount + settlingShortage.settledAmount,
+        }],
+      });
+      if (res.ok) {
+        toast.success('Pembayaran kekurangan berhasil dicatat');
+        setShowSettleDialog(false);
+        setSettlingShortage(null);
+        await fetchShortages();
+      } else {
+        toast.error('Gagal mencatat pembayaran');
+      }
+    } catch {
+      toast.error('Terjadi kesalahan');
+    } finally {
+      setSavingSettle(false);
+    }
+  };
+
+  // ----------------------------------------
+  // Loading Skeleton
   // ----------------------------------------
 
   const renderSkeleton = (count: number) =>
@@ -412,290 +560,150 @@ export function RondaJimpitanPage({ userId, familyId, isAdmin }: RondaJimpitanPa
       </Card>
     ));
 
+  const todayDutyGroup = useMemo(() => {
+    if (!collectionData?.group) return null;
+    return collectionData.group;
+  }, [collectionData]);
+
   // ----------------------------------------
-  // Render
+  // RENDER
   // ----------------------------------------
 
   return (
     <div className="space-y-6">
+      {/* Page Header */}
       <div>
         <h2 className="text-xl font-semibold text-slate-800">Ronda &amp; Jimpitan</h2>
         <p className="text-sm text-slate-500 mt-0.5">
-          Kelola jadwal ronda dan iuran jimpitan harian
+          Kelola grup ronda, pendaftaran jimpitan, dan penarikan harian
         </p>
       </div>
 
-      <Tabs defaultValue="ronda" className="space-y-6">
-        <TabsList className="bg-slate-100">
-          <TabsTrigger value="ronda" className="gap-1.5 data-[state=active]:bg-white data-[state=active]:shadow-sm">
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
+        <TabsList className="bg-slate-100 h-auto flex-wrap">
+          <TabsTrigger
+            value="groups"
+            className="gap-1.5 data-[state=active]:bg-white data-[state=active]:shadow-sm text-xs sm:text-sm"
+          >
             <Shield className="w-4 h-4" />
-            Ronda
+            Grup Ronda
           </TabsTrigger>
-          <TabsTrigger value="jimpitan" className="gap-1.5 data-[state=active]:bg-white data-[state=active]:shadow-sm">
+          <TabsTrigger
+            value="enrollment"
+            className="gap-1.5 data-[state=active]:bg-white data-[state=active]:shadow-sm text-xs sm:text-sm"
+          >
+            <Users className="w-4 h-4" />
+            Daftar Jimpitan
+          </TabsTrigger>
+          <TabsTrigger
+            value="collection"
+            className="gap-1.5 data-[state=active]:bg-white data-[state=active]:shadow-sm text-xs sm:text-sm"
+          >
             <Wallet className="w-4 h-4" />
-            Jimpitan
+            Tarik Jimpitan
+          </TabsTrigger>
+          <TabsTrigger
+            value="shortages"
+            className="gap-1.5 data-[state=active]:bg-white data-[state=active]:shadow-sm text-xs sm:text-sm"
+          >
+            <AlertTriangle className="w-4 h-4" />
+            Kekurangan
           </TabsTrigger>
         </TabsList>
 
         {/* ============================================ */}
-        {/* RONDA TAB */}
+        {/* TAB 1: GRUP RONDA */}
         {/* ============================================ */}
-        <TabsContent value="ronda" className="space-y-6">
-          {/* Ronda Groups Section */}
-          <section className="space-y-4">
-            <div className="flex items-center justify-between">
-              <h3 className="text-base font-semibold text-slate-700">Grup Ronda</h3>
-              {isAdmin && (
-                <Button
-                  onClick={() => {
-                    setGroupForm({ name: '', description: '' });
-                    setShowAddGroupDialog(true);
-                  }}
-                  className="h-9 bg-slate-800 hover:bg-slate-700 text-white text-sm"
-                  size="sm"
-                >
-                  <Plus className="w-3.5 h-3.5 mr-1" />
-                  Tambah Grup
-                </Button>
-              )}
+        <TabsContent value="groups" className="space-y-6">
+          {loadingGroups ? (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+              {renderSkeleton(7)}
             </div>
-
-            {loadingRonda ? (
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                {renderSkeleton(3)}
-              </div>
-            ) : rondaGroups.length === 0 ? (
-              <Card className="rounded-xl shadow-sm border">
-                <CardContent className="p-8 text-center">
-                  <Shield className="w-10 h-10 text-slate-300 mx-auto mb-2" />
-                  <p className="text-slate-500 text-sm">Belum ada grup ronda</p>
-                </CardContent>
-              </Card>
-            ) : (
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                {rondaGroups.map(group => (
-                  <Card
-                    key={group.id}
-                    className="rounded-xl shadow-sm border hover:shadow-md transition-shadow"
-                  >
-                    <CardContent className="p-5">
-                      <div className="flex items-center gap-2 mb-1">
-                        <div className="w-8 h-8 rounded-lg bg-slate-100 flex items-center justify-center">
-                          <Users className="w-4 h-4 text-slate-600" />
-                        </div>
-                        <div>
-                          <h4 className="font-semibold text-slate-800">{group.name}</h4>
-                        </div>
+          ) : groups.length === 0 ? (
+            <Card className="rounded-xl shadow-sm border">
+              <CardContent className="p-8 text-center">
+                <Shield className="w-10 h-10 text-slate-300 mx-auto mb-2" />
+                <p className="text-slate-500 text-sm">Belum ada grup ronda</p>
+              </CardContent>
+            </Card>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+              {groups.map(group => (
+                <Card
+                  key={group.id}
+                  className="rounded-xl shadow-sm border hover:shadow-md transition-shadow"
+                >
+                  <CardHeader className="p-4 pb-2">
+                    <div className="flex items-center gap-2">
+                      <div className="w-8 h-8 rounded-lg bg-slate-100 flex items-center justify-center shrink-0">
+                        <Shield className="w-4 h-4 text-slate-600" />
                       </div>
-                      {group.description && (
-                        <p className="text-sm text-slate-500 mt-1">{group.description}</p>
-                      )}
-                      <Badge
-                        variant="secondary"
-                        className={`mt-2 text-xs ${group.isActive ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-700'}`}
-                      >
-                        {group.isActive ? 'Aktif' : 'Nonaktif'}
-                      </Badge>
-                    </CardContent>
-                  </Card>
-                ))}
-              </div>
-            )}
-          </section>
-
-          {/* Ronda Schedule Section */}
-          <section className="space-y-4">
-            <div className="flex items-center justify-between">
-              <h3 className="text-base font-semibold text-slate-700">Jadwal Ronda</h3>
-              {isAdmin && (
-                <Button
-                  onClick={() => {
-                    setScheduleForm({ groupId: '', date: '', shift: 'MALAM', notes: '' });
-                    setShowAddScheduleDialog(true);
-                  }}
-                  className="h-9 bg-slate-800 hover:bg-slate-700 text-white text-sm"
-                  size="sm"
-                >
-                  <Plus className="w-3.5 h-3.5 mr-1" />
-                  Tambah Jadwal
-                </Button>
-              )}
-            </div>
-
-            {loadingRonda ? (
-              <div className="space-y-3">{renderSkeleton(3)}</div>
-            ) : schedules.length === 0 ? (
-              <Card className="rounded-xl shadow-sm border">
-                <CardContent className="p-8 text-center">
-                  <Calendar className="w-10 h-10 text-slate-300 mx-auto mb-2" />
-                  <p className="text-slate-500 text-sm">Belum ada jadwal ronda</p>
-                </CardContent>
-              </Card>
-            ) : (
-              <div className="space-y-3">
-                {schedules
-                  .sort((a, b) => b.date.localeCompare(a.date))
-                  .map(schedule => (
-                    <Card
-                      key={schedule.id}
-                      className="rounded-xl shadow-sm border hover:shadow-md transition-shadow"
+                      <div className="min-w-0">
+                        <CardTitle className="text-sm font-semibold text-slate-800 truncate">
+                          {group.name}
+                        </CardTitle>
+                        <p className="text-xs text-slate-500">{DAY_LABELS[group.dayOfWeek] ?? DAY_NAMES[group.dayOfWeek]}</p>
+                      </div>
+                    </div>
+                  </CardHeader>
+                  <CardContent className="p-4 pt-0">
+                    <Separator className="mb-3" />
+                    <p className="text-xs text-slate-500 mb-2">
+                      {group.families.length} KK anggota
+                    </p>
+                    {group.families.length > 0 ? (
+                      <div className="space-y-1 mb-3">
+                        {group.families.slice(0, 5).map(f => (
+                          <p key={f.id} className="text-xs text-slate-700 truncate">
+                            • {f.familyHead}
+                          </p>
+                        ))}
+                        {group.families.length > 5 && (
+                          <p className="text-xs text-slate-400">
+                            +{group.families.length - 5} lainnya
+                          </p>
+                        )}
+                      </div>
+                    ) : (
+                      <p className="text-xs text-slate-400 mb-3">Belum ada anggota</p>
+                    )}
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="w-full h-8 text-xs"
+                      onClick={() => openManageDialog(group)}
                     >
-                      <CardContent className="p-5">
-                        <div className="flex items-start justify-between gap-3">
-                          <div className="flex-1">
-                            <div className="flex items-center gap-2 mb-2">
-                              <Calendar className="w-4 h-4 text-slate-400" />
-                              <span className="font-medium text-slate-800">
-                                {formatDateShort(schedule.date)}
-                              </span>
-                              {shiftBadge(schedule.shift)}
-                            </div>
-                            <div className="flex items-center gap-2">
-                              <Badge variant="secondary" className="text-xs bg-slate-100 text-slate-600">
-                                <Shield className="w-3 h-3 mr-1" />
-                                {schedule.group?.name || 'Grup'}
-                              </Badge>
-                              {schedule.notes && (
-                                <span className="text-xs text-slate-400">{schedule.notes}</span>
-                              )}
-                            </div>
-
-                            {/* Attendance logs */}
-                            {schedule.logs && schedule.logs.length > 0 && (
-                              <div className="mt-3 pt-3 border-t border-slate-100">
-                                <p className="text-xs text-slate-500 mb-2">Kehadiran:</p>
-                                <div className="flex flex-wrap gap-2">
-                                  {schedule.logs.map(log => (
-                                    <div
-                                      key={log.id}
-                                      className="flex items-center gap-1.5 text-xs bg-slate-50 rounded-md px-2 py-1"
-                                    >
-                                      {statusIcon(log.status)}
-                                      <span className="text-slate-600">
-                                        {log.user?.name || log.family?.familyHead || 'Warga'}
-                                      </span>
-                                      <span className="text-slate-400">
-                                        ({RONDA_STATUS_LABELS[log.status] || log.status})
-                                      </span>
-                                    </div>
-                                  ))}
-                                </div>
-                              </div>
-                            )}
-                          </div>
-
-                          {isAdmin && (
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              className="h-8 text-xs shrink-0"
-                              onClick={() => openAttendanceDialog(schedule)}
-                            >
-                              <CheckCircle2 className="w-3.5 h-3.5 mr-1" />
-                              Absensi
-                            </Button>
-                          )}
-                        </div>
-                      </CardContent>
-                    </Card>
-                  ))}
-              </div>
-            )}
-          </section>
+                      <Users className="w-3.5 h-3.5 mr-1" />
+                      Kelola Anggota
+                    </Button>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          )}
         </TabsContent>
 
         {/* ============================================ */}
-        {/* JIMPITAN TAB */}
+        {/* TAB 2: DAFTAR JIMPITAN */}
         {/* ============================================ */}
-        <TabsContent value="jimpitan" className="space-y-6">
-          {/* Summary cards */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            <Card className="rounded-xl shadow-sm border">
-              <CardContent className="p-5">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-lg bg-slate-100 flex items-center justify-center">
-                    <CircleDollarSign className="w-5 h-5 text-slate-600" />
-                  </div>
-                  <div>
-                    <p className="text-xs text-slate-500">Total Jimpitan</p>
-                    <p className="text-lg font-bold text-slate-800">
-                      {formatCurrency(jimpitanSummary.total)}
-                    </p>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-            <Card className="rounded-xl shadow-sm border">
-              <CardContent className="p-5">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-lg bg-emerald-50 flex items-center justify-center">
-                    <CheckCircle2 className="w-5 h-5 text-emerald-600" />
-                  </div>
-                  <div>
-                    <p className="text-xs text-slate-500">Sudah Dibayar</p>
-                    <p className="text-lg font-bold text-emerald-700">
-                      {formatCurrency(jimpitanSummary.paid)}
-                    </p>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-            <Card className="rounded-xl shadow-sm border">
-              <CardContent className="p-5">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-lg bg-red-50 flex items-center justify-center">
-                    <Banknote className="w-5 h-5 text-red-500" />
-                  </div>
-                  <div>
-                    <p className="text-xs text-slate-500">Belum Dibayar</p>
-                    <p className="text-lg font-bold text-red-600">
-                      {formatCurrency(jimpitanSummary.unpaid)}
-                    </p>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
+        <TabsContent value="enrollment" className="space-y-4">
+          {/* Search */}
+          <div className="relative max-w-sm">
+            <Input
+              placeholder="Cari nama KK atau alamat..."
+              value={enrollmentSearch}
+              onChange={e => setEnrollmentSearch(e.target.value)}
+              className="h-10 pl-4 rounded-lg border-slate-200"
+            />
           </div>
 
-          {/* Add jimpitan button + search */}
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-            <div className="relative flex-1 max-w-sm">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-              <Input
-                placeholder="Cari keluarga atau tanggal..."
-                value={jimpitanSearch}
-                onChange={e => setJimpitanSearch(e.target.value)}
-                className="h-10 pl-9 rounded-lg border-slate-200"
-              />
-            </div>
-            {isAdmin && (
-              <Button
-                onClick={() => {
-                  setJimpitanForm({
-                    familyId: '',
-                    date: new Date().toISOString().split('T')[0],
-                    amount: 0,
-                    isPaid: false,
-                    notes: '',
-                  });
-                  setShowAddJimpitanDialog(true);
-                }}
-                className="h-10 bg-slate-800 hover:bg-slate-700 text-white"
-              >
-                <Plus className="w-4 h-4 mr-1.5" />
-                Tambah Jimpitan
-              </Button>
-            )}
-          </div>
-
-          {/* Jimpitan logs table */}
-          {loadingJimpitan ? (
+          {loadingEnrollment ? (
             <div className="space-y-3">{renderSkeleton(5)}</div>
-          ) : filteredJimpitanLogs.length === 0 ? (
+          ) : filteredEnrollmentFamilies.length === 0 ? (
             <Card className="rounded-xl shadow-sm border">
               <CardContent className="p-8 text-center">
-                <Wallet className="w-10 h-10 text-slate-300 mx-auto mb-2" />
-                <p className="text-slate-500 text-sm">Belum ada data jimpitan</p>
+                <Users className="w-10 h-10 text-slate-300 mx-auto mb-2" />
+                <p className="text-slate-500 text-sm">Belum ada data keluarga</p>
               </CardContent>
             </Card>
           ) : (
@@ -704,62 +712,358 @@ export function RondaJimpitanPage({ userId, familyId, isAdmin }: RondaJimpitanPa
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead className="text-xs">Tanggal</TableHead>
-                      <TableHead className="text-xs">Keluarga</TableHead>
-                      <TableHead className="text-xs">Jumlah</TableHead>
-                      <TableHead className="text-xs">Status</TableHead>
-                      <TableHead className="text-xs">Catatan</TableHead>
-                      {isAdmin && <TableHead className="text-xs text-right">Aksi</TableHead>}
+                      <TableHead className="text-xs w-12">No</TableHead>
+                      <TableHead className="text-xs">Nama KK</TableHead>
+                      <TableHead className="text-xs hidden sm:table-cell">Alamat</TableHead>
+                      <TableHead className="text-xs hidden md:table-cell">Grup Ronda</TableHead>
+                      <TableHead className="text-xs text-center">Status Jimpitan</TableHead>
+                      <TableHead className="text-xs text-right">Aksi</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {filteredJimpitanLogs
-                      .sort((a, b) => b.date.localeCompare(a.date))
-                      .map(log => (
-                        <TableRow key={log.id}>
-                          <TableCell className="text-sm text-slate-700">
-                            {formatDateShort(log.date)}
+                    {filteredEnrollmentFamilies.map((family, idx) => {
+                      const group = groups.find(g => g.families.some(f => f.id === family.id));
+                      return (
+                        <TableRow key={family.id}>
+                          <TableCell className="text-sm text-slate-500">{idx + 1}</TableCell>
+                          <TableCell className="text-sm font-medium text-slate-800">
+                            {family.familyHead}
                           </TableCell>
-                          <TableCell className="text-sm font-medium text-slate-700">
-                            {log.family?.familyHead || '-'}
+                          <TableCell className="text-sm text-slate-600 hidden sm:table-cell">
+                            {family.address || '-'}
                           </TableCell>
-                          <TableCell className="text-sm font-semibold text-slate-800">
-                            {formatCurrency(log.amount)}
+                          <TableCell className="text-sm text-slate-600 hidden md:table-cell">
+                            {group ? group.name : '-'}
                           </TableCell>
-                          <TableCell>
+                          <TableCell className="text-center">
                             <Badge
-                              variant="secondary"
                               className={`text-xs ${
-                                log.isPaid
-                                  ? 'bg-emerald-50 text-emerald-700'
-                                  : 'bg-red-50 text-red-700'
+                                family.isActive
+                                  ? 'bg-emerald-100 text-emerald-700 hover:bg-emerald-100'
+                                  : 'bg-slate-100 text-slate-500 hover:bg-slate-100'
                               }`}
                             >
-                              {log.isPaid ? 'Lunas' : 'Belum Bayar'}
+                              {family.isActive ? 'Aktif' : 'Tidak Aktif'}
                             </Badge>
                           </TableCell>
-                          <TableCell className="text-sm text-slate-400">
-                            {log.notes || '-'}
+                          <TableCell className="text-right">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className={`h-8 text-xs ${
+                                family.isActive
+                                  ? 'border-red-200 text-red-600 hover:bg-red-50'
+                                  : 'border-emerald-200 text-emerald-600 hover:bg-emerald-50'
+                              }`}
+                              onClick={() => handleToggleEnrollment(family)}
+                              disabled={togglingEnrollment === family.id}
+                            >
+                              {togglingEnrollment === family.id ? (
+                                <span className="animate-pulse">...</span>
+                              ) : family.isActive ? (
+                                <>
+                                  <XCircle className="w-3.5 h-3.5 mr-1" />
+                                  Nonaktifkan
+                                </>
+                              ) : (
+                                <>
+                                  <CheckCircle2 className="w-3.5 h-3.5 mr-1" />
+                                  Aktifkan
+                                </>
+                              )}
+                            </Button>
                           </TableCell>
-                          {isAdmin && (
-                            <TableCell className="text-right">
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                className={`h-7 text-xs ${
-                                  log.isPaid
-                                    ? 'text-red-500 hover:text-red-700'
-                                    : 'text-emerald-600 hover:text-emerald-800'
-                                }`}
-                                onClick={() => handleTogglePaid(log)}
-                              >
-                                <Edit3 className="w-3 h-3 mr-1" />
-                                {log.isPaid ? 'Batalkan' : 'Lunasi'}
-                              </Button>
-                            </TableCell>
-                          )}
                         </TableRow>
-                      ))}
+                      );
+                    })}
+                  </TableBody>
+                </Table>
+              </div>
+            </Card>
+          )}
+        </TabsContent>
+
+        {/* ============================================ */}
+        {/* TAB 3: TARIK JIMPITAN */}
+        {/* ============================================ */}
+        <TabsContent value="collection" className="space-y-4">
+          {/* Header Section */}
+          <div className="flex flex-col sm:flex-row sm:items-center gap-4">
+            <div className="space-y-1">
+              <Label className="text-xs text-slate-500">Tanggal Penarikan</Label>
+              <Input
+                type="date"
+                value={collectionDate}
+                onChange={e => setCollectionDate(e.target.value)}
+                className="h-10 w-full sm:w-48 rounded-lg border-slate-200"
+              />
+            </div>
+
+            {todayDutyGroup && (
+              <div className="flex items-center gap-2 px-4 py-2 bg-slate-50 rounded-lg border border-slate-200">
+                <Shield className="w-5 h-5 text-slate-600" />
+                <div>
+                  <p className="text-sm font-medium text-slate-800">{todayDutyGroup.name}</p>
+                  <p className="text-xs text-slate-500">jaga malam ini</p>
+                </div>
+              </div>
+            )}
+
+            {collectionData && collectionData.jimpitanAmount > 0 && (
+              <div className="flex items-center gap-2 px-4 py-2 bg-emerald-50 rounded-lg border border-emerald-200">
+                <CircleDollarSign className="w-5 h-5 text-emerald-600" />
+                <div>
+                  <p className="text-xs text-slate-500">Besaran</p>
+                  <p className="text-sm font-bold text-emerald-700">
+                    {formatCurrency(collectionData.jimpitanAmount)}
+                  </p>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Summary Cards */}
+          {collectionData && (
+            <div className="grid grid-cols-3 gap-3">
+              <Card className="rounded-xl shadow-sm border">
+                <CardContent className="p-3 sm:p-4">
+                  <div className="flex items-center gap-2">
+                    <div className="w-8 h-8 rounded-lg bg-slate-100 flex items-center justify-center shrink-0">
+                      <Users className="w-4 h-4 text-slate-600" />
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-xs text-slate-500">Total KK</p>
+                      <p className="text-lg font-bold text-slate-800">
+                        {computedSummary.totalFamilies}
+                      </p>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+              <Card className="rounded-xl shadow-sm border">
+                <CardContent className="p-3 sm:p-4">
+                  <div className="flex items-center gap-2">
+                    <div className="w-8 h-8 rounded-lg bg-emerald-50 flex items-center justify-center shrink-0">
+                      <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-xs text-slate-500">Terkumpul</p>
+                      <p className="text-sm sm:text-lg font-bold text-emerald-700">
+                        {formatCurrency(computedSummary.totalPaid)}
+                      </p>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+              <Card className="rounded-xl shadow-sm border">
+                <CardContent className="p-3 sm:p-4">
+                  <div className="flex items-center gap-2">
+                    <div className="w-8 h-8 rounded-lg bg-red-50 flex items-center justify-center shrink-0">
+                      <Banknote className="w-4 h-4 text-red-500" />
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-xs text-slate-500">Kekurangan</p>
+                      <p className="text-sm sm:text-lg font-bold text-red-600">
+                        {formatCurrency(computedSummary.totalShortage)}
+                      </p>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+          )}
+
+          {/* Collection Table */}
+          {loadingCollection ? (
+            <div className="space-y-3">{renderSkeleton(5)}</div>
+          ) : !collectionData || collectionData.entries.length === 0 ? (
+            <Card className="rounded-xl shadow-sm border">
+              <CardContent className="p-8 text-center">
+                <Wallet className="w-10 h-10 text-slate-300 mx-auto mb-2" />
+                <p className="text-slate-500 text-sm">
+                  Tidak ada KK terdaftar jimpitan untuk tanggal ini
+                </p>
+              </CardContent>
+            </Card>
+          ) : (
+            <>
+              <Card className="rounded-xl shadow-sm border overflow-hidden">
+                <div className="overflow-x-auto">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead className="text-xs w-12">No</TableHead>
+                        <TableHead className="text-xs min-w-[140px]">Nama KK</TableHead>
+                        <TableHead className="text-xs min-w-[200px]">Dibayar (Rp)</TableHead>
+                        <TableHead className="text-xs text-center w-24">Status</TableHead>
+                        <TableHead className="text-xs min-w-[120px]">Catatan</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {collectionData.entries.map((entry, idx) => {
+                        const paid = getEntryPaidAmount(entry);
+                        const notes = getEntryNotes(entry);
+                        const expected = entry.expectedAmount;
+
+                        return (
+                          <TableRow key={entry.familyId}>
+                            <TableCell className="text-sm text-slate-500">{idx + 1}</TableCell>
+                            <TableCell className="text-sm font-medium text-slate-800">
+                              {entry.familyHead}
+                            </TableCell>
+                            <TableCell>
+                              <div className="space-y-1.5">
+                                {/* Quick select buttons */}
+                                <div className="flex gap-1">
+                                  {JIMPITAN_QUICK_VALUES.map(val => (
+                                    <button
+                                      key={val}
+                                      type="button"
+                                      className={`h-8 px-2.5 rounded-md text-xs font-medium border transition-colors ${
+                                        paid === val
+                                          ? 'bg-emerald-600 text-white border-emerald-600'
+                                          : 'border-slate-200 text-slate-600 bg-white hover:bg-slate-50'
+                                      }`}
+                                      onClick={() => setEntryPaidAmount(entry.familyId, val)}
+                                    >
+                                      {val === 0 ? '0' : val >= 1000 ? `${val / 1000}rb` : val}
+                                    </button>
+                                  ))}
+                                  {/* Custom amount input */}
+                                  <Input
+                                    type="number"
+                                    min={0}
+                                    placeholder="Lain"
+                                    value={paid > 0 && !JIMPITAN_QUICK_VALUES.includes(paid) ? paid : ''}
+                                    onChange={e => {
+                                      const v = parseInt(e.target.value);
+                                      if (!isNaN(v) && v >= 0) {
+                                        setEntryPaidAmount(entry.familyId, v);
+                                      }
+                                    }}
+                                    className="h-8 w-16 text-xs rounded-md border-slate-200 px-2"
+                                  />
+                                </div>
+                              </div>
+                            </TableCell>
+                            <TableCell className="text-center">
+                              {getStatusBadge(paid, expected)}
+                            </TableCell>
+                            <TableCell>
+                              <Input
+                                type="text"
+                                placeholder="Catatan..."
+                                value={notes}
+                                onChange={e => setEntryNotes(entry.familyId, e.target.value)}
+                                className="h-8 text-xs rounded-md border-slate-200 px-2"
+                              />
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })}
+                    </TableBody>
+                  </Table>
+                </div>
+              </Card>
+
+              {/* Save Button */}
+              <div className="flex justify-end">
+                <Button
+                  className="h-10 bg-slate-800 hover:bg-slate-700 text-white px-6"
+                  onClick={handleSaveCollection}
+                  disabled={savingCollection}
+                >
+                  <Save className="w-4 h-4 mr-1.5" />
+                  {savingCollection ? 'Menyimpan...' : 'Simpan Semua'}
+                </Button>
+              </div>
+            </>
+          )}
+        </TabsContent>
+
+        {/* ============================================ */}
+        {/* TAB 4: KEKURANGAN */}
+        {/* ============================================ */}
+        <TabsContent value="shortages" className="space-y-4">
+          {/* Period Selector */}
+          <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+            <Label className="text-sm text-slate-600 shrink-0">Periode Selapanan:</Label>
+            <Select
+              value={selectedSelapananId}
+              onValueChange={setSelectedSelapananId}
+            >
+              <SelectTrigger className="h-10 w-full sm:w-64 rounded-lg border-slate-200">
+                <SelectValue placeholder="Pilih periode" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Semua Periode</SelectItem>
+                {shortageSummary.map(s => (
+                  <SelectItem key={s.selapananId} value={s.selapananId}>
+                    {formatDateShort(s.periodeStart)} — {formatDateShort(s.periodeEnd)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          {loadingShortage ? (
+            <div className="space-y-3">{renderSkeleton(5)}</div>
+          ) : flattenedShortages.length === 0 ? (
+            <Card className="rounded-xl shadow-sm border">
+              <CardContent className="p-8 text-center">
+                <CheckCircle2 className="w-10 h-10 text-emerald-300 mx-auto mb-2" />
+                <p className="text-slate-500 text-sm">Tidak ada data kekurangan</p>
+              </CardContent>
+            </Card>
+          ) : (
+            <Card className="rounded-xl shadow-sm border overflow-hidden">
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="text-xs w-12">No</TableHead>
+                      <TableHead className="text-xs">Nama KK</TableHead>
+                      {selectedSelapananId === 'all' && (
+                        <TableHead className="text-xs hidden sm:table-cell">Periode</TableHead>
+                      )}
+                      <TableHead className="text-xs text-right">Total Kekurangan</TableHead>
+                      <TableHead className="text-xs text-center">Status</TableHead>
+                      <TableHead className="text-xs text-right">Aksi</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {flattenedShortages.map((entry, idx) => (
+                      <TableRow key={`${entry.familyId}-${entry.selapananId}`}>
+                        <TableCell className="text-sm text-slate-500">{idx + 1}</TableCell>
+                        <TableCell className="text-sm font-medium text-slate-800">
+                          {entry.familyHead}
+                        </TableCell>
+                        {selectedSelapananId === 'all' && (
+                          <TableCell className="text-xs text-slate-600 hidden sm:table-cell">
+                            {formatDateShort(entry.periodeStart)} — {formatDateShort(entry.periodeEnd)}
+                          </TableCell>
+                        )}
+                        <TableCell className="text-sm font-semibold text-red-600 text-right">
+                          {formatCurrency(entry.totalShortage - entry.settledAmount)}
+                        </TableCell>
+                        <TableCell className="text-center">
+                          {getShortageStatusBadge(entry)}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          {!entry.isSettled && (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="h-8 text-xs border-emerald-200 text-emerald-600 hover:bg-emerald-50"
+                              onClick={() => openSettleDialog(entry as ShortageEntry & { selapananId: string })}
+                            >
+                              <Banknote className="w-3.5 h-3.5 mr-1" />
+                              Bayar
+                            </Button>
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    ))}
                   </TableBody>
                 </Table>
               </div>
@@ -772,280 +1076,209 @@ export function RondaJimpitanPage({ userId, familyId, isAdmin }: RondaJimpitanPa
       {/* DIALOGS */}
       {/* ============================================ */}
 
-      {/* Add Ronda Group Dialog */}
-      <Dialog open={showAddGroupDialog} onOpenChange={setShowAddGroupDialog}>
-        <DialogContent className="rounded-xl">
+      {/* Kelola Anggota Dialog */}
+      <Dialog open={showManageDialog} onOpenChange={setShowManageDialog}>
+        <DialogContent className="rounded-xl max-w-lg max-h-[85vh]">
           <DialogHeader>
-            <DialogTitle>Tambah Grup Ronda</DialogTitle>
+            <DialogTitle className="text-slate-800">
+              Kelola Anggota — {manageGroup?.name}
+            </DialogTitle>
+            <DialogDescription>
+              Tambah, pindahkan, atau hapus anggota grup ronda
+            </DialogDescription>
           </DialogHeader>
-          <div className="space-y-4 py-2">
-            <div className="space-y-2">
-              <Label htmlFor="group-name">Nama Grup</Label>
-              <Input
-                id="group-name"
-                placeholder="Contoh: Grup 1, Grup 2..."
-                value={groupForm.name}
-                onChange={e => setGroupForm({ ...groupForm, name: e.target.value })}
-                className="h-10"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="group-desc">Deskripsi (opsional)</Label>
-              <Input
-                id="group-desc"
-                placeholder="Keterangan tambahan"
-                value={groupForm.description}
-                onChange={e => setGroupForm({ ...groupForm, description: e.target.value })}
-                className="h-10"
-              />
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" className="h-10" onClick={() => setShowAddGroupDialog(false)} disabled={saving}>
-              Batal
-            </Button>
-            <Button
-              className="h-10 bg-slate-800 hover:bg-slate-700 text-white"
-              onClick={handleAddGroup}
-              disabled={saving || !groupForm.name.trim()}
-            >
-              {saving ? 'Menyimpan...' : 'Simpan'}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
 
-      {/* Add Ronda Schedule Dialog */}
-      <Dialog open={showAddScheduleDialog} onOpenChange={setShowAddScheduleDialog}>
-        <DialogContent className="rounded-xl">
-          <DialogHeader>
-            <DialogTitle>Tambah Jadwal Ronda</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4 py-2">
+          <div className="space-y-4 overflow-y-auto max-h-[55vh] pr-1">
+            {/* Add member dropdown */}
+            {unassignedFamilies.length > 0 && (
+              <div className="space-y-2">
+                <Label className="text-sm text-slate-600">Tambah KK ke Grup</Label>
+                <div className="flex gap-2">
+                  <Select value={addFamilyId} onValueChange={setAddFamilyId}>
+                    <SelectTrigger className="h-9 text-sm flex-1">
+                      <SelectValue placeholder="Pilih KK yang belum terdaftar..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {unassignedFamilies.map(f => (
+                        <SelectItem key={f.id} value={f.id}>
+                          {f.familyHead}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <Button
+                    size="sm"
+                    className="h-9 bg-emerald-600 hover:bg-emerald-700 text-white"
+                    onClick={handleAddFamilyToGroup}
+                    disabled={!addFamilyId || savingGroup}
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                  </Button>
+                </div>
+              </div>
+            )}
+
+            <Separator />
+
+            {/* Current members */}
             <div className="space-y-2">
-              <Label>Grup Ronda</Label>
-              <Select
-                value={scheduleForm.groupId}
-                onValueChange={v => setScheduleForm({ ...scheduleForm, groupId: v })}
-              >
-                <SelectTrigger className="h-10 w-full">
-                  <SelectValue placeholder="Pilih grup" />
-                </SelectTrigger>
-                <SelectContent>
-                  {rondaGroups.filter(g => g.isActive).map(group => (
-                    <SelectItem key={group.id} value={group.id}>
-                      {group.name}
-                    </SelectItem>
+              <Label className="text-sm text-slate-600">
+                Anggota Saat Ini ({manageGroup?.families.length ?? 0} KK)
+              </Label>
+              {manageGroup && manageGroup.families.length === 0 ? (
+                <p className="text-xs text-slate-400 py-4 text-center">
+                  Belum ada anggota di grup ini
+                </p>
+              ) : (
+                <div className="space-y-2">
+                  {manageGroup?.families.map(family => (
+                    <div
+                      key={family.id}
+                      className="flex items-center justify-between gap-2 p-2.5 bg-slate-50 rounded-lg"
+                    >
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium text-slate-800 truncate">
+                          {family.familyHead}
+                        </p>
+                        <p className="text-xs text-slate-500 truncate">
+                          {family.address}
+                        </p>
+                      </div>
+                      <div className="flex gap-1 shrink-0">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-7 text-xs text-slate-600 hover:bg-slate-100"
+                          onClick={() => handleMoveFamily(family)}
+                          disabled={savingGroup}
+                        >
+                          <ArrowRightLeft className="w-3.5 h-3.5 mr-1" />
+                          Pindah
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-7 text-xs text-red-500 hover:bg-red-50"
+                          onClick={() => handleRemoveFromGroup(family.id)}
+                          disabled={savingGroup}
+                        >
+                          <Trash2 className="w-3.5 h-3.5 mr-1" />
+                          Hapus
+                        </Button>
+                      </div>
+                    </div>
                   ))}
-                </SelectContent>
-              </Select>
+                </div>
+              )}
             </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Pindah Grup Dialog */}
+      <Dialog open={showMoveDialog} onOpenChange={setShowMoveDialog}>
+        <DialogContent className="rounded-xl max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="text-slate-800">Pindah Grup</DialogTitle>
+            <DialogDescription>
+              Pindahkan {movingFamily?.familyHead} ke grup lain
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
             <div className="space-y-2">
-              <Label htmlFor="schedule-date">Tanggal</Label>
-              <Input
-                id="schedule-date"
-                type="date"
-                value={scheduleForm.date}
-                onChange={e => setScheduleForm({ ...scheduleForm, date: e.target.value })}
-                className="h-10"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label>Shift</Label>
-              <Select
-                value={scheduleForm.shift}
-                onValueChange={v => setScheduleForm({ ...scheduleForm, shift: v })}
-              >
-                <SelectTrigger className="h-10 w-full">
-                  <SelectValue />
+              <Label className="text-sm text-slate-600">Grup Tujuan</Label>
+              <Select value={targetGroupId} onValueChange={setTargetGroupId}>
+                <SelectTrigger className="h-10">
+                  <SelectValue placeholder="Pilih grup tujuan..." />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="MALAM">Malam</SelectItem>
-                  <SelectItem value="PAGI">Pagi</SelectItem>
+                  {groups
+                    .filter(g => g.id !== manageGroup?.id)
+                    .map(g => (
+                      <SelectItem key={g.id} value={g.id}>
+                        {g.name} ({DAY_LABELS[g.dayOfWeek]})
+                      </SelectItem>
+                    ))}
                 </SelectContent>
               </Select>
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="schedule-notes">Catatan (opsional)</Label>
-              <Input
-                id="schedule-notes"
-                placeholder="Catatan tambahan"
-                value={scheduleForm.notes}
-                onChange={e => setScheduleForm({ ...scheduleForm, notes: e.target.value })}
-                className="h-10"
-              />
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" className="h-10" onClick={() => setShowAddScheduleDialog(false)} disabled={saving}>
+            <Button
+              variant="outline"
+              className="h-10"
+              onClick={() => setShowMoveDialog(false)}
+              disabled={savingGroup}
+            >
               Batal
             </Button>
             <Button
               className="h-10 bg-slate-800 hover:bg-slate-700 text-white"
-              onClick={handleAddSchedule}
-              disabled={saving || !scheduleForm.groupId || !scheduleForm.date}
+              onClick={handleConfirmMove}
+              disabled={!targetGroupId || savingGroup}
             >
-              {saving ? 'Menyimpan...' : 'Simpan'}
+              {savingGroup ? 'Memindahkan...' : 'Pindahkan'}
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      {/* Attendance Dialog */}
-      <Dialog open={showAttendanceDialog} onOpenChange={setShowAttendanceDialog}>
-        <DialogContent className="rounded-xl">
+      {/* Settlement Dialog */}
+      <Dialog open={showSettleDialog} onOpenChange={setShowSettleDialog}>
+        <DialogContent className="rounded-xl max-w-sm">
           <DialogHeader>
-            <DialogTitle>Catat Kehadiran</DialogTitle>
+            <DialogTitle className="text-slate-800">Bayar Kekurangan</DialogTitle>
+            <DialogDescription>
+              Catat pembayaran kekurangan jimpitan
+            </DialogDescription>
           </DialogHeader>
-          {selectedSchedule && (
-            <p className="text-sm text-slate-500">
-              Jadwal: {formatDateShort(selectedSchedule.date)} — {selectedSchedule.shift === 'MALAM' ? 'Malam' : 'Pagi'}
-            </p>
+          {settlingShortage && (
+            <div className="space-y-4 py-2">
+              <div className="p-3 bg-slate-50 rounded-lg space-y-1">
+                <p className="text-sm font-medium text-slate-800">
+                  {settlingShortage.familyHead}
+                </p>
+                <p className="text-xs text-slate-500">
+                  Total kekurangan: <span className="font-semibold text-red-600">{formatCurrency(settlingShortage.totalShortage - settlingShortage.settledAmount)}</span>
+                </p>
+                {settlingShortage.settledAmount > 0 && (
+                  <p className="text-xs text-slate-500">
+                    Sudah dibayar: <span className="font-semibold text-emerald-600">{formatCurrency(settlingShortage.settledAmount)}</span>
+                  </p>
+                )}
+              </div>
+              <div className="space-y-2">
+                <Label className="text-sm text-slate-600">Jumlah Pembayaran (Rp)</Label>
+                <Input
+                  type="number"
+                  min={0}
+                  max={settlingShortage.totalShortage - settlingShortage.settledAmount}
+                  value={settleAmount || ''}
+                  onChange={e => setSettleAmount(parseInt(e.target.value) || 0)}
+                  className="h-10"
+                  placeholder="0"
+                />
+                <p className="text-xs text-slate-400">
+                  Maks: {formatCurrency(settlingShortage.totalShortage - settlingShortage.settledAmount)}
+                </p>
+              </div>
+            </div>
           )}
-          <div className="space-y-4 py-2">
-            <div className="space-y-2">
-              <Label>Keluarga</Label>
-              <Select
-                value={attendanceForm.familyId}
-                onValueChange={v => setAttendanceForm({ ...attendanceForm, familyId: v })}
-              >
-                <SelectTrigger className="h-10 w-full">
-                  <SelectValue placeholder="Pilih keluarga" />
-                </SelectTrigger>
-                <SelectContent>
-                  {families.filter(f => f.isActive).map(family => (
-                    <SelectItem key={family.id} value={family.id}>
-                      {family.familyHead}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-2">
-              <Label>Status Kehadiran</Label>
-              <Select
-                value={attendanceForm.status}
-                onValueChange={v => setAttendanceForm({ ...attendanceForm, status: v })}
-              >
-                <SelectTrigger className="h-10 w-full">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="HADIR">Hadir</SelectItem>
-                  <SelectItem value="TIDAK_HADIR">Tidak Hadir</SelectItem>
-                  <SelectItem value="IZIN">Izin</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="attendance-notes">Catatan (opsional)</Label>
-              <Input
-                id="attendance-notes"
-                placeholder="Alasan izin, dll."
-                value={attendanceForm.notes}
-                onChange={e => setAttendanceForm({ ...attendanceForm, notes: e.target.value })}
-                className="h-10"
-              />
-            </div>
-          </div>
           <DialogFooter>
-            <Button variant="outline" className="h-10" onClick={() => setShowAttendanceDialog(false)} disabled={saving}>
+            <Button
+              variant="outline"
+              className="h-10"
+              onClick={() => setShowSettleDialog(false)}
+              disabled={savingSettle}
+            >
               Batal
             </Button>
             <Button
-              className="h-10 bg-slate-800 hover:bg-slate-700 text-white"
-              onClick={handleMarkAttendance}
-              disabled={saving || !attendanceForm.familyId}
+              className="h-10 bg-emerald-600 hover:bg-emerald-700 text-white"
+              onClick={handleSettleShortage}
+              disabled={settleAmount <= 0 || savingSettle}
             >
-              {saving ? 'Menyimpan...' : 'Simpan'}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Add Jimpitan Dialog */}
-      <Dialog open={showAddJimpitanDialog} onOpenChange={setShowAddJimpitanDialog}>
-        <DialogContent className="rounded-xl">
-          <DialogHeader>
-            <DialogTitle>Tambah Jimpitan</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4 py-2">
-            <div className="space-y-2">
-              <Label>Keluarga</Label>
-              <Select
-                value={jimpitanForm.familyId}
-                onValueChange={v => setJimpitanForm({ ...jimpitanForm, familyId: v })}
-              >
-                <SelectTrigger className="h-10 w-full">
-                  <SelectValue placeholder="Pilih keluarga" />
-                </SelectTrigger>
-                <SelectContent>
-                  {families.filter(f => f.isActive).map(family => (
-                    <SelectItem key={family.id} value={family.id}>
-                      {family.familyHead}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="jimpitan-date">Tanggal</Label>
-              <Input
-                id="jimpitan-date"
-                type="date"
-                value={jimpitanForm.date}
-                onChange={e => setJimpitanForm({ ...jimpitanForm, date: e.target.value })}
-                className="h-10"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="jimpitan-amount">Jumlah (Rp)</Label>
-              <Input
-                id="jimpitan-amount"
-                type="number"
-                min={0}
-                placeholder="0"
-                value={jimpitanForm.amount || ''}
-                onChange={e => setJimpitanForm({ ...jimpitanForm, amount: parseInt(e.target.value) || 0 })}
-                className="h-10"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label>Status Pembayaran</Label>
-              <Select
-                value={jimpitanForm.isPaid ? 'paid' : 'unpaid'}
-                onValueChange={v => setJimpitanForm({ ...jimpitanForm, isPaid: v === 'paid' })}
-              >
-                <SelectTrigger className="h-10 w-full">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="unpaid">Belum Bayar</SelectItem>
-                  <SelectItem value="paid">Sudah Dibayar</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="jimpitan-notes">Catatan (opsional)</Label>
-              <Input
-                id="jimpitan-notes"
-                placeholder="Catatan tambahan"
-                value={jimpitanForm.notes}
-                onChange={e => setJimpitanForm({ ...jimpitanForm, notes: e.target.value })}
-                className="h-10"
-              />
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" className="h-10" onClick={() => setShowAddJimpitanDialog(false)} disabled={saving}>
-              Batal
-            </Button>
-            <Button
-              className="h-10 bg-slate-800 hover:bg-slate-700 text-white"
-              onClick={handleAddJimpitan}
-              disabled={saving || !jimpitanForm.familyId || !jimpitanForm.date || jimpitanForm.amount <= 0}
-            >
-              {saving ? 'Menyimpan...' : 'Simpan'}
+              {savingSettle ? 'Menyimpan...' : 'Bayar'}
             </Button>
           </DialogFooter>
         </DialogContent>

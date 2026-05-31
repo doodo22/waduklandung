@@ -19,8 +19,9 @@ import { SuratPage } from '@/components/features/surat-page';
 import { PengaturanPage } from '@/components/features/pengaturan-page';
 import { AkunPage } from '@/components/features/akun-page';
 import { BerandaPage } from '@/components/features/beranda-page';
-import { RondaWargaPage } from '@/components/features/ronda-warga-page';
-import { IuranPage } from '@/components/features/iuran-page';
+import { RondaPage } from '@/components/features/mobile/ronda-page';
+import { IuranPage } from '@/components/features/mobile/iuran-page';
+import { SelapananPage as SelapananWargaPage } from '@/components/features/mobile/selapanan-page';
 import { ProfilPage } from '@/components/features/profil-page';
 import { useEffect, Suspense } from 'react';
 
@@ -41,7 +42,7 @@ interface PageProps {
   isAdmin: boolean;
 }
 
-const pageComponents: Record<string, React.ComponentType<PageProps>> = {
+const adminPageComponents: Record<string, React.ComponentType<PageProps>> = {
   dashboard: DashboardPage,
   verifikasi: VerifikasiPage,
   warga: WargaPage,
@@ -53,9 +54,13 @@ const pageComponents: Record<string, React.ComponentType<PageProps>> = {
   surat: SuratPage,
   pengaturan: PengaturanPage,
   akun: AkunPage,
+};
+
+const wargaPageComponents: Record<string, React.ComponentType<PageProps>> = {
   beranda: BerandaPage,
-  ronda: RondaWargaPage,
+  ronda: RondaPage,
   iuran: IuranPage,
+  selapanan: SelapananWargaPage,
   profil: ProfilPage,
 };
 
@@ -84,6 +89,7 @@ function AppContent() {
   if (isLoading) return <LoadingScreen />;
   if (!user) return <LoginPage />;
 
+  const pageComponents = isAdmin ? adminPageComponents : wargaPageComponents;
   const PageComponent = pageComponents[currentPage];
 
   if (isAdmin) {
