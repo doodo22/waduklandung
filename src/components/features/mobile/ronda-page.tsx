@@ -7,9 +7,8 @@ import {
   formatCurrency,
   RONDA_STATUS_LABELS,
 } from '@/lib/constants';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import {
   Shield,
@@ -23,7 +22,6 @@ import {
   Wallet,
   Save,
   Loader2,
-  Banknote,
   CircleDollarSign,
   HandCoins,
 } from 'lucide-react';
@@ -80,7 +78,6 @@ interface RondaSchedule {
   }>;
 }
 
-// Jimpitan collection types
 interface CollectionEntry {
   familyId: string;
   familyHead: string;
@@ -125,7 +122,7 @@ export function RondaPage({ userId, familyId, isAdmin }: RondaWargaPageProps) {
   // Jimpitan collection state
   const [collectionData, setCollectionData] = useState<CollectionData | null>(null);
   const [loadingCollection, setLoadingCollection] = useState(false);
-  const [editedEntries, setEditedEntries] = useState<Map<string, { paidAmount: number; notes: string }>>(new Map());
+  const [editedEntries, setEditedEntries] = useState<Map<string, number>>(new Map());
   const [savingCollection, setSavingCollection] = useState(false);
   const [showJimpitanForm, setShowJimpitanForm] = useState(false);
 
@@ -186,9 +183,6 @@ export function RondaPage({ userId, familyId, isAdmin }: RondaWargaPageProps) {
   const today = new Date().toISOString().split('T')[0];
   const isOnDutyToday = useMemo(() => {
     if (!myGroup) return false;
-    // The dayOfWeek for the group is the day they patrol at night
-    // Group with dayOfWeek=1 (Senin) patrols on Sunday night going into Monday
-    // So for today's date, the group on duty = (today.getDay() + 1) % 7
     const dutyDayOfWeek = (new Date().getDay() + 1) % 7;
     return myGroup.dayOfWeek === dutyDayOfWeek;
   }, [myGroup]);
@@ -220,29 +214,13 @@ export function RondaPage({ userId, familyId, isAdmin }: RondaWargaPageProps) {
   // ─── Jimpitan Collection Handlers ─────────────────────────────────────────
 
   const getEntryPaidAmount = (entry: CollectionEntry): number => {
-    const edited = editedEntries.get(entry.familyId);
-    return edited?.paidAmount ?? entry.paidAmount;
-  };
-
-  const getEntryNotes = (entry: CollectionEntry): string => {
-    const edited = editedEntries.get(entry.familyId);
-    return edited?.notes ?? entry.notes ?? '';
+    return editedEntries.get(entry.familyId) ?? entry.paidAmount;
   };
 
   const setEntryPaidAmount = (familyId: string, amount: number) => {
     setEditedEntries(prev => {
       const next = new Map(prev);
-      const existing = next.get(familyId);
-      next.set(familyId, { paidAmount: amount, notes: existing?.notes ?? '' });
-      return next;
-    });
-  };
-
-  const setEntryNotes = (familyId: string, notes: string) => {
-    setEditedEntries(prev => {
-      const next = new Map(prev);
-      const existing = next.get(familyId);
-      next.set(familyId, { paidAmount: existing?.paidAmount ?? 0, notes });
+      next.set(familyId, amount);
       return next;
     });
   };
@@ -259,7 +237,7 @@ export function RondaPage({ userId, familyId, isAdmin }: RondaWargaPageProps) {
     let totalPaid = 0;
     let totalShortage = 0;
     for (const entry of entries) {
-      const paid = getEntryPaidAmount(entry);
+      const paid = editedEntries.get(entry.familyId) ?? entry.paidAmount;
       const shortage = Math.max(0, entry.expectedAmount - paid);
       totalPaid += paid;
       totalShortage += shortage;
@@ -275,14 +253,10 @@ export function RondaPage({ userId, familyId, isAdmin }: RondaWargaPageProps) {
     if (!collectionData) return;
     setSavingCollection(true);
     try {
-      const entries = collectionData.entries.map(entry => {
-        const edited = editedEntries.get(entry.familyId);
-        return {
-          familyId: entry.familyId,
-          paidAmount: edited?.paidAmount ?? entry.paidAmount,
-          notes: edited?.notes ?? entry.notes ?? null,
-        };
-      });
+      const entries = collectionData.entries.map(entry => ({
+        familyId: entry.familyId,
+        paidAmount: editedEntries.get(entry.familyId) ?? entry.paidAmount,
+      }));
 
       const res = await api.post('/jimpitan/collection', {
         date: today,
@@ -358,9 +332,124 @@ export function RondaPage({ userId, familyId, isAdmin }: RondaWargaPageProps) {
   const izinCount = logs.filter((l) => l.status === 'IZIN').length;
   const tidakHadirCount = logs.filter((l) => l.status === 'TIDAK_HADIR').length;
 
+  // Render collection content
+  const renderCollectionContent = () => {
+    if (loadingCollection) {
+      return (
+        <div className="space-y-3">
+          {[1, 2, 3].map((i) => (
+            <div key={i} className="animate-pulse space-y-2">
+              <div className="h-4 bg-emerald-100 rounded w-3/4" />
+              <div className="h-8 bg-emerald-50 rounded w-full" />
+            </div>
+          ))}
+        </div>
+      );
+    }
+
+    if (!collectionData || collectionData.entries.length === 0) {
+      return (
+        <div className="text-center py-6">
+          <Wallet className="w-10 h-10 text-emerald-200 mx-auto mb-2" />
+          <p className="text-sm text-stone-500">Tidak ada KK terdaftar jimpitan untuk hari ini</p>
+        </div>
+      );
+    }
+
+    return (
+      <div className="space-y-3">
+        {/* Summary */}
+        <div className="grid grid-cols-3 gap-2">
+          <div className="text-center p-2 bg-slate-50 rounded-lg border border-slate-100">
+            <p className="text-lg font-bold text-slate-800">{computedSummary.totalFamilies}</p>
+            <p className="text-[10px] text-slate-500 font-semibold">KK</p>
+          </div>
+          <div className="text-center p-2 bg-emerald-50 rounded-lg border border-emerald-100">
+            <p className="text-sm font-bold text-emerald-700">{formatCurrency(computedSummary.totalPaid)}</p>
+            <p className="text-[10px] text-emerald-600 font-semibold">Terkumpul</p>
+          </div>
+          <div className="text-center p-2 bg-rose-50 rounded-lg border border-rose-100">
+            <p className="text-sm font-bold text-rose-600">{formatCurrency(computedSummary.totalShortage)}</p>
+            <p className="text-[10px] text-rose-500 font-semibold">Kurang</p>
+          </div>
+        </div>
+
+        {/* Simple Table */}
+        <div className="border border-slate-200 rounded-xl overflow-hidden">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="bg-slate-50 border-b border-slate-200">
+                <th className="text-left text-[11px] font-bold text-slate-500 uppercase tracking-wide px-3 py-2">KK</th>
+                <th className="text-center text-[11px] font-bold text-slate-500 uppercase tracking-wide px-2 py-2">Jimpitan</th>
+                <th className="text-center text-[11px] font-bold text-slate-500 uppercase tracking-wide px-2 py-2 w-16">Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {collectionData.entries.map((entry, idx) => {
+                const paid = getEntryPaidAmount(entry);
+                const expected = entry.expectedAmount;
+
+                return (
+                  <tr
+                    key={entry.familyId}
+                    className={idx % 2 === 0 ? 'bg-white' : 'bg-slate-50/50'}
+                  >
+                    <td className="px-3 py-2.5">
+                      <span className="text-sm font-medium text-stone-800">{entry.familyHead}</span>
+                    </td>
+                    <td className="px-2 py-2">
+                      <div className="flex items-center justify-center gap-1">
+                        {JIMPITAN_QUICK_VALUES.map(val => (
+                          <button
+                            key={val}
+                            type="button"
+                            className={`h-7 min-w-[38px] px-1.5 rounded-md text-[11px] font-bold border transition-colors ${
+                              paid === val
+                                ? 'bg-emerald-600 text-white border-emerald-600'
+                                : 'border-slate-200 text-slate-600 bg-white hover:bg-slate-50 active:bg-slate-100'
+                            }`}
+                            onClick={() => setEntryPaidAmount(entry.familyId, val)}
+                          >
+                            {val === 0 ? '0' : val >= 1000 ? `${val / 1000}rb` : val}
+                          </button>
+                        ))}
+                      </div>
+                    </td>
+                    <td className="px-2 py-2 text-center">
+                      {getStatusBadge(paid, expected)}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+
+        {/* Save Button */}
+        <Button
+          className="w-full h-11 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold text-sm shadow-sm"
+          onClick={handleSaveCollection}
+          disabled={savingCollection}
+        >
+          {savingCollection ? (
+            <>
+              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+              Menyimpan...
+            </>
+          ) : (
+            <>
+              <Save className="w-4 h-4 mr-2" />
+              Simpan Semua
+            </>
+          )}
+        </Button>
+      </div>
+    );
+  };
+
   return (
     <div className="space-y-4">
-      {/* ═══ Ronda Duty Alert - Show when on duty today ═══ */}
+      {/* ═══ Ronda Duty Alert ═══ */}
       {isOnDutyToday && myGroup && (
         <Card className="rounded-2xl shadow-md border-2 border-amber-300 bg-gradient-to-br from-amber-50 to-orange-50 overflow-hidden">
           <div className="bg-amber-500/20 px-4 py-2.5 border-b border-amber-200/50 flex items-center gap-2">
@@ -373,7 +462,7 @@ export function RondaPage({ userId, familyId, isAdmin }: RondaWargaPageProps) {
             <div className="flex items-center justify-between mb-3">
               <div>
                 <p className="text-base font-bold text-stone-800">{myGroup.name}</p>
-                <p className="text-xs text-stone-500">Jaga malam ini • {DAY_LABELS[myGroup.dayOfWeek]}</p>
+                <p className="text-xs text-stone-500">Jaga malam ini &bull; {DAY_LABELS[myGroup.dayOfWeek]}</p>
               </div>
               <Button
                 onClick={() => setShowJimpitanForm(!showJimpitanForm)}
@@ -392,7 +481,7 @@ export function RondaPage({ userId, familyId, isAdmin }: RondaWargaPageProps) {
         </Card>
       )}
 
-      {/* ═══ Jimpitan Collection Form (only shown when on duty & form opened) ═══ */}
+      {/* ═══ Jimpitan Collection Form ═══ */}
       {isOnDutyToday && showJimpitanForm && (
         <Card className="rounded-2xl shadow-md border border-emerald-200 bg-white/95 overflow-hidden">
           <div className="bg-emerald-50 px-4 py-2.5 border-b border-emerald-100 flex items-center justify-between">
@@ -410,124 +499,7 @@ export function RondaPage({ userId, familyId, isAdmin }: RondaWargaPageProps) {
             ) : null}
           </div>
           <CardContent className="p-4">
-            {loadingCollection ? (
-              <div className="space-y-3">
-                {[1, 2, 3].map((i) => (
-                  <div key={i} className="animate-pulse space-y-2">
-                    <div className="h-4 bg-emerald-100 rounded w-3/4" />
-                    <div className="h-8 bg-emerald-50 rounded w-full" />
-                  </div>
-                ))}
-              </div>
-            ) : !collectionData || collectionData.entries.length === 0 ? (
-              <div className="text-center py-6">
-                <Wallet className="w-10 h-10 text-emerald-200 mx-auto mb-2" />
-                <p className="text-sm text-stone-500">Tidak ada KK terdaftar jimpitan untuk hari ini</p>
-              </div>
-            ) : (
-              <>
-                {/* Summary */}
-                <div className="grid grid-cols-3 gap-2 mb-4">
-                  <div className="text-center p-2 bg-slate-50 rounded-xl border border-slate-100">
-                    <p className="text-lg font-bold text-slate-800">{computedSummary.totalFamilies}</p>
-                    <p className="text-[10px] text-slate-500 font-semibold">Total KK</p>
-                  </div>
-                  <div className="text-center p-2 bg-emerald-50 rounded-xl border border-emerald-100">
-                    <p className="text-sm font-bold text-emerald-700">{formatCurrency(computedSummary.totalPaid)}</p>
-                    <p className="text-[10px] text-emerald-600 font-semibold">Terkumpul</p>
-                  </div>
-                  <div className="text-center p-2 bg-rose-50 rounded-xl border border-rose-100">
-                    <p className="text-sm font-bold text-rose-600">{formatCurrency(computedSummary.totalShortage)}</p>
-                    <p className="text-[10px] text-rose-500 font-semibold">Kekurangan</p>
-                  </div>
-                </div>
-
-                {/* Collection entries list */}
-                <div className="space-y-3 max-h-[50vh] overflow-y-auto">
-                  {collectionData.entries.map((entry, idx) => {
-                    const paid = getEntryPaidAmount(entry);
-                    const notes = getEntryNotes(entry);
-                    const expected = entry.expectedAmount;
-
-                    return (
-                      <div
-                        key={entry.familyId}
-                        className="rounded-xl border border-slate-100 bg-white p-3 space-y-2"
-                      >
-                        {/* Header */}
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-2">
-                            <span className="text-xs text-slate-400 font-medium">{idx + 1}.</span>
-                            <span className="text-sm font-semibold text-stone-800">{entry.familyHead}</span>
-                          </div>
-                          {getStatusBadge(paid, expected)}
-                        </div>
-
-                        {/* Quick select buttons */}
-                        <div className="flex gap-1.5 flex-wrap">
-                          {JIMPITAN_QUICK_VALUES.map(val => (
-                            <button
-                              key={val}
-                              type="button"
-                              className={`h-8 px-3 rounded-lg text-xs font-bold border transition-colors ${
-                                paid === val
-                                  ? 'bg-emerald-600 text-white border-emerald-600 shadow-sm'
-                                  : 'border-slate-200 text-slate-600 bg-white hover:bg-slate-50 active:bg-slate-100'
-                              }`}
-                              onClick={() => setEntryPaidAmount(entry.familyId, val)}
-                            >
-                              {val === 0 ? '0' : val >= 1000 ? `${val / 1000}rb` : val}
-                            </button>
-                          ))}
-                          {/* Custom amount input */}
-                          <Input
-                            type="number"
-                            min={0}
-                            placeholder="Lain"
-                            value={paid > 0 && !JIMPITAN_QUICK_VALUES.includes(paid) ? paid : ''}
-                            onChange={e => {
-                              const v = parseInt(e.target.value);
-                              if (!isNaN(v) && v >= 0) {
-                                setEntryPaidAmount(entry.familyId, v);
-                              }
-                            }}
-                            className="h-8 w-20 text-xs rounded-lg border-slate-200 px-2"
-                          />
-                        </div>
-
-                        {/* Notes input */}
-                        <Input
-                          type="text"
-                          placeholder="Catatan..."
-                          value={notes}
-                          onChange={e => setEntryNotes(entry.familyId, e.target.value)}
-                          className="h-7 text-xs rounded-lg border-slate-200 px-2"
-                        />
-                      </div>
-                    );
-                  })}
-                </div>
-
-                {/* Save Button */}
-                <Button
-                  className="w-full h-11 mt-4 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold text-sm shadow-sm"
-                  onClick={handleSaveCollection}
-                  disabled={savingCollection}
-                >
-                  {savingCollection ? (
-                    <>
-                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                      Menyimpan...
-                    </>
-                  ) : (
-                    <>
-                      <Save className="w-4 h-4 mr-2" />
-                      Simpan Semua
-                    </>
-                  )}
-                </Button>
-              </>
-            )}
+            {renderCollectionContent()}
           </CardContent>
         </Card>
       )}
@@ -637,7 +609,7 @@ export function RondaPage({ userId, familyId, isAdmin }: RondaWargaPageProps) {
                           </p>
                           <p className="text-xs text-stone-500">
                             {schedule.shift === 'MALAM' ? 'Malam' : 'Pagi'}
-                            {isToday && ' • Hari ini'}
+                            {isToday && ' \u2022 Hari ini'}
                           </p>
                         </div>
                       </div>
@@ -702,7 +674,7 @@ export function RondaPage({ userId, familyId, isAdmin }: RondaWargaPageProps) {
                         {log.schedule.group.name}
                       </p>
                       <p className="text-xs text-stone-500">
-                        {formatDateShort(log.schedule.date)} •{' '}
+                        {formatDateShort(log.schedule.date)} &bull;{' '}
                         {log.schedule.shift === 'MALAM' ? 'Malam' : 'Pagi'}
                       </p>
                     </div>
