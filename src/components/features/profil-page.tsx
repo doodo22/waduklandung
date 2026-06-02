@@ -58,6 +58,9 @@ import {
   CheckCircle2,
   Save,
   Home,
+  KeyRound,
+  Eye,
+  EyeOff,
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -155,6 +158,15 @@ export function ProfilPage({ userId, familyId, isAdmin }: ProfilPageProps) {
   const [savingProfile, setSavingProfile] = useState(false);
   const [savedProfile, setSavedProfile] = useState(false);
 
+  // Form state for change password
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [savingPassword, setSavingPassword] = useState(false);
+  const [showCurrentPassword, setShowCurrentPassword] = useState(false);
+  const [showNewPassword, setShowNewPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+
   // ─── Sync phone with user ───────────────────────────────────────────────
 
   useEffect(() => {
@@ -220,6 +232,49 @@ export function ProfilPage({ userId, familyId, isAdmin }: ProfilPageProps) {
       toast.error('Gagal menyimpan profil');
     } finally {
       setSavingProfile(false);
+    }
+  };
+
+  // ─── Change password ────────────────────────────────────────────────────
+
+  const handleChangePassword = async () => {
+    if (!currentPassword || !newPassword || !confirmPassword) {
+      toast.error('Semua kolom wajib diisi');
+      return;
+    }
+    if (newPassword.length < 6) {
+      toast.error('Password baru minimal 6 karakter');
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      toast.error('Konfirmasi password tidak cocok');
+      return;
+    }
+
+    try {
+      setSavingPassword(true);
+      const res = await api.post('/auth/change-password', {
+        currentPassword,
+        newPassword,
+        confirmPassword,
+      });
+
+      if (res.ok) {
+        toast.success('Password berhasil diubah');
+        setCurrentPassword('');
+        setNewPassword('');
+        setConfirmPassword('');
+        setShowCurrentPassword(false);
+        setShowNewPassword(false);
+        setShowConfirmPassword(false);
+      } else {
+        const data = await res.json();
+        toast.error(data.error || 'Gagal mengubah password');
+      }
+    } catch {
+      toast.error('Gagal mengubah password');
+    } finally {
+      setSavingPassword(false);
     }
   };
 
@@ -721,9 +776,121 @@ export function ProfilPage({ userId, familyId, isAdmin }: ProfilPageProps) {
         </CardContent>
       </Card>
 
+      {/* ═══ 5. Ubah Password ═══ */}
+      <Card className="rounded-2xl shadow-sm border border-violet-100 bg-white/90 overflow-hidden">
+        <CardHeader className="pb-2 pt-4 px-4">
+          <div className="flex items-center gap-2">
+            <KeyRound className="w-4 h-4 text-violet-600" />
+            <CardTitle className="text-sm font-bold text-violet-800">Ubah Password</CardTitle>
+          </div>
+        </CardHeader>
+        <CardContent className="px-4 pb-4 space-y-3">
+          {/* Current Password */}
+          <div className="space-y-1.5">
+            <Label htmlFor="currentPassword" className="text-sm">
+              Password Saat Ini
+            </Label>
+            <div className="relative">
+              <Input
+                id="currentPassword"
+                type={showCurrentPassword ? 'text' : 'password'}
+                placeholder="Masukkan password saat ini"
+                value={currentPassword}
+                onChange={(e) => setCurrentPassword(e.target.value)}
+                className="h-11 pr-10"
+              />
+              <button
+                type="button"
+                onClick={() => setShowCurrentPassword(!showCurrentPassword)}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+              >
+                {showCurrentPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+              </button>
+            </div>
+          </div>
+
+          {/* New Password */}
+          <div className="space-y-1.5">
+            <Label htmlFor="newPassword" className="text-sm">
+              Password Baru
+            </Label>
+            <div className="relative">
+              <Input
+                id="newPassword"
+                type={showNewPassword ? 'text' : 'password'}
+                placeholder="Minimal 6 karakter"
+                value={newPassword}
+                onChange={(e) => setNewPassword(e.target.value)}
+                className="h-11 pr-10"
+              />
+              <button
+                type="button"
+                onClick={() => setShowNewPassword(!showNewPassword)}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+              >
+                {showNewPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+              </button>
+            </div>
+            {newPassword && newPassword.length < 6 && (
+              <p className="text-[11px] text-amber-600 font-medium">Password minimal 6 karakter</p>
+            )}
+          </div>
+
+          {/* Confirm Password */}
+          <div className="space-y-1.5">
+            <Label htmlFor="confirmPassword" className="text-sm">
+              Konfirmasi Password Baru
+            </Label>
+            <div className="relative">
+              <Input
+                id="confirmPassword"
+                type={showConfirmPassword ? 'text' : 'password'}
+                placeholder="Ulangi password baru"
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                className="h-11 pr-10"
+              />
+              <button
+                type="button"
+                onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+              >
+                {showConfirmPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+              </button>
+            </div>
+            {confirmPassword && newPassword !== confirmPassword && (
+              <p className="text-[11px] text-rose-600 font-medium">Konfirmasi password tidak cocok</p>
+            )}
+            {confirmPassword && newPassword === confirmPassword && confirmPassword.length >= 6 && (
+              <p className="text-[11px] text-emerald-600 font-medium flex items-center gap-1">
+                <CheckCircle2 className="w-3 h-3" /> Password cocok
+              </p>
+            )}
+          </div>
+
+          <Button
+            onClick={handleChangePassword}
+            disabled={savingPassword || !currentPassword || !newPassword || !confirmPassword || newPassword !== confirmPassword || newPassword.length < 6}
+            className="w-full h-11 bg-violet-700 hover:bg-violet-800 text-white rounded-xl font-semibold"
+          >
+            {savingPassword ? (
+              <>
+                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                Menyimpan...
+              </>
+            ) : (
+              <>
+                <KeyRound className="w-4 h-4 mr-2" />
+                Ubah Password
+              </>
+            )}
+          </Button>
+        </CardContent>
+      </Card>
+
       <Separator />
 
-      {/* ═══ 5. Logout Button ═══ */}
+      {/* ═══ 6. Logout Button ═══ */}
       <Button
         onClick={clearAuth}
         className="w-full h-12 bg-rose-600 hover:bg-rose-700 text-white rounded-xl font-bold text-base shadow-md"
@@ -732,7 +899,7 @@ export function ProfilPage({ userId, familyId, isAdmin }: ProfilPageProps) {
         Keluar
       </Button>
 
-      {/* ═══ 6. App Version Footer ═══ */}
+      {/* ═══ 7. App Version Footer ═══ */}
       <div className="text-center pt-2 pb-4">
         <p className="text-xs text-stone-400 font-medium">{APP_NAME} v1.0.0</p>
 

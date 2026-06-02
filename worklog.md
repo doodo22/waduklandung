@@ -27,3 +27,31 @@ Stage Summary:
 - Attendance can be marked by admin or ronda group members on their duty day
 - Recap shows after all 5 ronda sessions are complete
 - Lint check passes (0 errors)
+
+---
+Task ID: 2
+Agent: Main Agent
+Task: Add change password feature to warga dashboard
+
+Work Log:
+- Created API endpoint `/api/auth/change-password` (POST) with:
+  - Validates current password against stored hash using verifyPassword
+  - Validates new password (min 6 chars) and confirm match
+  - Hashes and saves new password using hashPassword
+  - Returns appropriate error messages for wrong current password, mismatch, etc.
+- Added change password UI section to `profil-page.tsx`:
+  - New "Ubah Password" card with violet accent color
+  - Three password fields: current, new, confirm — all with show/hide toggle (eye icon)
+  - Real-time validation: min 6 chars warning, mismatch error, match confirmation
+  - Submit button disabled until all validations pass
+  - Clears form after successful change
+  - Toast notifications for success/error
+- Added imports: KeyRound, Eye, EyeOff icons
+- Added state: currentPassword, newPassword, confirmPassword, savingPassword, show/hide toggles
+- Added handleChangePassword handler with full client-side + server-side validation
+
+Stage Summary:
+- Change password feature fully implemented (API + UI)
+- Server-side: password verification, hashing, validation
+- Client-side: intuitive form with show/hide passwords, real-time validation, clear feedback
+- Lint check passes (0 errors)
