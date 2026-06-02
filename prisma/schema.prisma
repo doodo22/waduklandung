@@ -111,16 +111,19 @@ model RondaGroup {
 }
 
 model RondaSchedule {
-  id          String   @id @default(cuid())
-  groupId     String
-  date        String   // YYYY-MM-DD
-  shift       String   @default("MALAM") // MALAM, PAGI
-  notes       String?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id           String   @id @default(cuid())
+  groupId      String
+  date         String   // YYYY-MM-DD
+  shift        String   @default("MALAM") // MALAM, PAGI
+  selapananId  String?  // FK ke Selapanan (untuk periode mana jadwal ini)
+  weekNumber   Int      @default(1) // Minggu ke-berapa dalam selapanan (1-5)
+  notes        String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 
-  group       RondaGroup @relation(fields: [groupId], references: [id])
-  logs        RondaLog[]
+  group        RondaGroup  @relation(fields: [groupId], references: [id])
+  selapanan    Selapanan?  @relation(fields: [selapananId], references: [id])
+  logs         RondaLog[]
 }
 
 model RondaLog {
@@ -224,6 +227,7 @@ model Selapanan {
   transactions    Transaction[]
   shortages       JimpitanShortage[]
   levyPayments    CustomLevyPayment[]
+  rondaSchedules  RondaSchedule[]
 }
 
 model SelapananDetail {
