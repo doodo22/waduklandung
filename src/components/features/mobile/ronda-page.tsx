@@ -1,14 +1,16 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { api } from '@/lib/api-client';
 import {
   formatDateShort,
+  formatCurrency,
   RONDA_STATUS_LABELS,
 } from '@/lib/constants';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
-import { Separator } from '@/components/ui/separator';
 import {
   Shield,
   Calendar,
@@ -18,7 +20,14 @@ import {
   Users,
   CheckCircle,
   AlertCircle,
+  Wallet,
+  Save,
+  Loader2,
+  Banknote,
+  CircleDollarSign,
+  HandCoins,
 } from 'lucide-react';
+import { toast } from 'sonner';
 
 interface RondaWargaPageProps {
   userId: string;
@@ -71,6 +80,30 @@ interface RondaSchedule {
   }>;
 }
 
+// Jimpitan collection types
+interface CollectionEntry {
+  familyId: string;
+  familyHead: string;
+  expectedAmount: number;
+  paidAmount: number;
+  shortage: number;
+  notes: string | null;
+  logId: string | null;
+}
+
+interface CollectionData {
+  date: string;
+  group: { id: string; name: string; dayOfWeek: number } | null;
+  jimpitanAmount: number;
+  entries: CollectionEntry[];
+  summary: {
+    totalFamilies: number;
+    totalExpected: number;
+    totalPaid: number;
+    totalShortage: number;
+  };
+}
+
 const DAY_LABELS: Record<number, string> = {
   0: 'Minggu',
   1: 'Senin',
@@ -81,11 +114,20 @@ const DAY_LABELS: Record<number, string> = {
   6: 'Sabtu',
 };
 
+const JIMPITAN_QUICK_VALUES = [0, 500, 1000];
+
 export function RondaPage({ userId, familyId, isAdmin }: RondaWargaPageProps) {
   const [myGroup, setMyGroup] = useState<RondaGroup | null>(null);
   const [schedules, setSchedules] = useState<RondaSchedule[]>([]);
   const [logs, setLogs] = useState<RondaLog[]>([]);
   const [loading, setLoading] = useState(true);
+
+  // Jimpitan collection state
+  const [collectionData, setCollectionData] = useState<CollectionData | null>(null);
+  const [loadingCollection, setLoadingCollection] = useState(false);
+  const [editedEntries, setEditedEntries] = useState<Map<string, { paidAmount: number; notes: string }>>(new Map());
+  const [savingCollection, setSavingCollection] = useState(false);
+  const [showJimpitanForm, setShowJimpitanForm] = useState(false);
 
   useEffect(() => {
     loadData();
@@ -95,7 +137,6 @@ export function RondaPage({ userId, familyId, isAdmin }: RondaWargaPageProps) {
     try {
       setLoading(true);
 
-      // Load groups to find user's group
       const groupsRes = await api.get('/ronda/groups');
       let userGroup: RondaGroup | null = null;
 
@@ -110,13 +151,11 @@ export function RondaPage({ userId, familyId, isAdmin }: RondaWargaPageProps) {
         setMyGroup(userGroup);
       }
 
-      // Load schedules for user's group this month
       if (userGroup) {
         const now = new Date();
         const year = now.getFullYear();
         const month = String(now.getMonth() + 1).padStart(2, '0');
         const from = `${year}-${month}-01`;
-        // Get last day of month
         const lastDay = new Date(year, now.getMonth() + 1, 0).getDate();
         const to = `${year}-${month}-${String(lastDay).padStart(2, '0')}`;
 
@@ -131,7 +170,6 @@ export function RondaPage({ userId, familyId, isAdmin }: RondaWargaPageProps) {
         }
       }
 
-      // Load user's ronda logs
       const logsRes = await api.get(`/ronda/logs?userId=${userId}`);
       if (logsRes.ok) {
         const logsData = await logsRes.json();
@@ -144,6 +182,129 @@ export function RondaPage({ userId, familyId, isAdmin }: RondaWargaPageProps) {
     }
   };
 
+  // Check if user is on ronda duty today
+  const today = new Date().toISOString().split('T')[0];
+  const isOnDutyToday = useMemo(() => {
+    if (!myGroup) return false;
+    // The dayOfWeek for the group is the day they patrol at night
+    // Group with dayOfWeek=1 (Senin) patrols on Sunday night going into Monday
+    // So for today's date, the group on duty = (today.getDay() + 1) % 7
+    const dutyDayOfWeek = (new Date().getDay() + 1) % 7;
+    return myGroup.dayOfWeek === dutyDayOfWeek;
+  }, [myGroup]);
+
+  // Fetch jimpitan collection data for today
+  const fetchCollection = useCallback(async () => {
+    setLoadingCollection(true);
+    try {
+      const res = await api.get(`/jimpitan/collection?date=${today}`);
+      if (res.ok) {
+        const data: CollectionData = await res.json();
+        setCollectionData(data);
+        setEditedEntries(new Map());
+      }
+    } catch {
+      // silent
+    } finally {
+      setLoadingCollection(false);
+    }
+  }, [today]);
+
+  // Auto-fetch collection data when on duty
+  useEffect(() => {
+    if (isOnDutyToday && familyId) {
+      fetchCollection();
+    }
+  }, [isOnDutyToday, familyId, fetchCollection]);
+
+  // ─── Jimpitan Collection Handlers ─────────────────────────────────────────
+
+  const getEntryPaidAmount = (entry: CollectionEntry): number => {
+    const edited = editedEntries.get(entry.familyId);
+    return edited?.paidAmount ?? entry.paidAmount;
+  };
+
+  const getEntryNotes = (entry: CollectionEntry): string => {
+    const edited = editedEntries.get(entry.familyId);
+    return edited?.notes ?? entry.notes ?? '';
+  };
+
+  const setEntryPaidAmount = (familyId: string, amount: number) => {
+    setEditedEntries(prev => {
+      const next = new Map(prev);
+      const existing = next.get(familyId);
+      next.set(familyId, { paidAmount: amount, notes: existing?.notes ?? '' });
+      return next;
+    });
+  };
+
+  const setEntryNotes = (familyId: string, notes: string) => {
+    setEditedEntries(prev => {
+      const next = new Map(prev);
+      const existing = next.get(familyId);
+      next.set(familyId, { paidAmount: existing?.paidAmount ?? 0, notes });
+      return next;
+    });
+  };
+
+  const getStatusBadge = (paid: number, expected: number) => {
+    if (paid === 0) return <Badge className="bg-red-100 text-red-700 hover:bg-red-100 text-xs">Kosong</Badge>;
+    if (paid < expected) return <Badge className="bg-amber-100 text-amber-700 hover:bg-amber-100 text-xs">Kurang</Badge>;
+    return <Badge className="bg-emerald-100 text-emerald-700 hover:bg-emerald-100 text-xs">Lunas</Badge>;
+  };
+
+  const computedSummary = useMemo(() => {
+    if (!collectionData) return { totalFamilies: 0, totalPaid: 0, totalShortage: 0 };
+    const entries = collectionData.entries;
+    let totalPaid = 0;
+    let totalShortage = 0;
+    for (const entry of entries) {
+      const paid = getEntryPaidAmount(entry);
+      const shortage = Math.max(0, entry.expectedAmount - paid);
+      totalPaid += paid;
+      totalShortage += shortage;
+    }
+    return {
+      totalFamilies: entries.length,
+      totalPaid,
+      totalShortage,
+    };
+  }, [collectionData, editedEntries]);
+
+  const handleSaveCollection = async () => {
+    if (!collectionData) return;
+    setSavingCollection(true);
+    try {
+      const entries = collectionData.entries.map(entry => {
+        const edited = editedEntries.get(entry.familyId);
+        return {
+          familyId: entry.familyId,
+          paidAmount: edited?.paidAmount ?? entry.paidAmount,
+          notes: edited?.notes ?? entry.notes ?? null,
+        };
+      });
+
+      const res = await api.post('/jimpitan/collection', {
+        date: today,
+        entries,
+      });
+
+      if (res.ok) {
+        toast.success('Data jimpitan berhasil disimpan');
+        await fetchCollection();
+      } else {
+        const data = await res.json();
+        toast.error(data.error || 'Gagal menyimpan data jimpitan');
+      }
+    } catch {
+      toast.error('Terjadi kesalahan');
+    } finally {
+      setSavingCollection(false);
+    }
+  };
+
+  // ─── General helpers ─────────────────────────────────────────────────────
+
   const getStatusColor = (status: string) => {
     switch (status) {
       case 'HADIR':
@@ -151,9 +312,9 @@ export function RondaPage({ userId, familyId, isAdmin }: RondaWargaPageProps) {
       case 'IZIN':
         return 'bg-amber-100 text-amber-700 border-amber-200';
       case 'TIDAK_HADIR':
-        return 'bg-red-100 text-red-700 border-red-200';
+        return 'bg-rose-100 text-rose-700 border-rose-200';
       default:
-        return 'bg-slate-100 text-slate-700 border-slate-200';
+        return 'bg-stone-100 text-stone-700 border-stone-200';
     }
   };
 
@@ -161,11 +322,11 @@ export function RondaPage({ userId, familyId, isAdmin }: RondaWargaPageProps) {
     return (
       <div className="space-y-4">
         {[1, 2, 3].map((i) => (
-          <Card key={i} className="rounded-xl shadow-sm border border-slate-200">
+          <Card key={i} className="rounded-2xl shadow-sm border border-orange-100 bg-white/80">
             <CardContent className="p-4">
               <div className="animate-pulse space-y-3">
-                <div className="h-4 bg-slate-200 rounded w-3/4" />
-                <div className="h-4 bg-slate-200 rounded w-1/2" />
+                <div className="h-4 bg-orange-100 rounded w-3/4" />
+                <div className="h-4 bg-orange-100 rounded w-1/2" />
               </div>
             </CardContent>
           </Card>
@@ -176,11 +337,11 @@ export function RondaPage({ userId, familyId, isAdmin }: RondaWargaPageProps) {
 
   if (!familyId) {
     return (
-      <Card className="rounded-xl shadow-sm border border-slate-200">
+      <Card className="rounded-2xl shadow-sm border border-orange-100 bg-white/80">
         <CardContent className="p-8 text-center">
-          <AlertCircle className="w-10 h-10 text-slate-300 mx-auto mb-3" />
-          <p className="text-sm text-slate-500">Anda belum terdaftar di keluarga</p>
-          <p className="text-xs text-slate-400 mt-1">
+          <AlertCircle className="w-10 h-10 text-teal-300 mx-auto mb-3" />
+          <p className="text-sm font-semibold text-stone-700">Anda belum terdaftar di keluarga</p>
+          <p className="text-xs text-stone-500 mt-1">
             Hubungi pengurus RT untuk pendaftaran
           </p>
         </CardContent>
@@ -188,41 +349,208 @@ export function RondaPage({ userId, familyId, isAdmin }: RondaWargaPageProps) {
     );
   }
 
-  // Build a map of scheduleId → log for this user
   const logMap = new Map<string, RondaLog>();
   for (const log of logs) {
     logMap.set(log.schedule.id, log);
   }
 
-  const today = new Date().toISOString().split('T')[0];
-
-  // Stats
   const hadirCount = logs.filter((l) => l.status === 'HADIR').length;
   const izinCount = logs.filter((l) => l.status === 'IZIN').length;
   const tidakHadirCount = logs.filter((l) => l.status === 'TIDAK_HADIR').length;
 
   return (
     <div className="space-y-4">
-      {/* My Ronda Group Card */}
-      <Card className="rounded-xl shadow-sm border border-slate-200">
-        <CardContent className="p-4">
-          <div className="flex items-center gap-2 mb-3">
-            <Shield className="w-5 h-5 text-emerald-600" />
-            <h2 className="text-base font-semibold text-slate-800">Grup Ronda Saya</h2>
+      {/* ═══ Ronda Duty Alert - Show when on duty today ═══ */}
+      {isOnDutyToday && myGroup && (
+        <Card className="rounded-2xl shadow-md border-2 border-amber-300 bg-gradient-to-br from-amber-50 to-orange-50 overflow-hidden">
+          <div className="bg-amber-500/20 px-4 py-2.5 border-b border-amber-200/50 flex items-center gap-2">
+            <div className="w-6 h-6 rounded-full bg-amber-500 flex items-center justify-center animate-pulse">
+              <Shield className="w-3.5 h-3.5 text-white" />
+            </div>
+            <span className="text-xs font-bold text-amber-800 uppercase tracking-wide">Anda Bertugas Hari Ini!</span>
           </div>
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between mb-3">
+              <div>
+                <p className="text-base font-bold text-stone-800">{myGroup.name}</p>
+                <p className="text-xs text-stone-500">Jaga malam ini • {DAY_LABELS[myGroup.dayOfWeek]}</p>
+              </div>
+              <Button
+                onClick={() => setShowJimpitanForm(!showJimpitanForm)}
+                className="bg-amber-600 hover:bg-amber-700 text-white text-xs h-9 px-3 rounded-lg font-semibold"
+              >
+                <HandCoins className="w-4 h-4 mr-1.5" />
+                {showJimpitanForm ? 'Tutup Form' : 'Tarik Jimpitan'}
+              </Button>
+            </div>
+            {!showJimpitanForm && (
+              <p className="text-xs text-amber-700 bg-amber-100/80 rounded-lg p-2.5">
+                Klik <strong>Tarik Jimpitan</strong> untuk menginput pembayaran jimpitan warga saat ronda malam ini.
+              </p>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
+      {/* ═══ Jimpitan Collection Form (only shown when on duty & form opened) ═══ */}
+      {isOnDutyToday && showJimpitanForm && (
+        <Card className="rounded-2xl shadow-md border border-emerald-200 bg-white/95 overflow-hidden">
+          <div className="bg-emerald-50 px-4 py-2.5 border-b border-emerald-100 flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Wallet className="w-4 h-4 text-emerald-700" />
+              <span className="text-xs font-bold text-emerald-800 uppercase tracking-wide">Penarikan Jimpitan</span>
+            </div>
+            {collectionData?.jimpitanAmount ? (
+              <div className="flex items-center gap-1.5 bg-emerald-100 rounded-lg px-2 py-1">
+                <CircleDollarSign className="w-3.5 h-3.5 text-emerald-600" />
+                <span className="text-xs font-bold text-emerald-700">
+                  {formatCurrency(collectionData.jimpitanAmount)}/KK
+                </span>
+              </div>
+            ) : null}
+          </div>
+          <CardContent className="p-4">
+            {loadingCollection ? (
+              <div className="space-y-3">
+                {[1, 2, 3].map((i) => (
+                  <div key={i} className="animate-pulse space-y-2">
+                    <div className="h-4 bg-emerald-100 rounded w-3/4" />
+                    <div className="h-8 bg-emerald-50 rounded w-full" />
+                  </div>
+                ))}
+              </div>
+            ) : !collectionData || collectionData.entries.length === 0 ? (
+              <div className="text-center py-6">
+                <Wallet className="w-10 h-10 text-emerald-200 mx-auto mb-2" />
+                <p className="text-sm text-stone-500">Tidak ada KK terdaftar jimpitan untuk hari ini</p>
+              </div>
+            ) : (
+              <>
+                {/* Summary */}
+                <div className="grid grid-cols-3 gap-2 mb-4">
+                  <div className="text-center p-2 bg-slate-50 rounded-xl border border-slate-100">
+                    <p className="text-lg font-bold text-slate-800">{computedSummary.totalFamilies}</p>
+                    <p className="text-[10px] text-slate-500 font-semibold">Total KK</p>
+                  </div>
+                  <div className="text-center p-2 bg-emerald-50 rounded-xl border border-emerald-100">
+                    <p className="text-sm font-bold text-emerald-700">{formatCurrency(computedSummary.totalPaid)}</p>
+                    <p className="text-[10px] text-emerald-600 font-semibold">Terkumpul</p>
+                  </div>
+                  <div className="text-center p-2 bg-rose-50 rounded-xl border border-rose-100">
+                    <p className="text-sm font-bold text-rose-600">{formatCurrency(computedSummary.totalShortage)}</p>
+                    <p className="text-[10px] text-rose-500 font-semibold">Kekurangan</p>
+                  </div>
+                </div>
+
+                {/* Collection entries list */}
+                <div className="space-y-3 max-h-[50vh] overflow-y-auto">
+                  {collectionData.entries.map((entry, idx) => {
+                    const paid = getEntryPaidAmount(entry);
+                    const notes = getEntryNotes(entry);
+                    const expected = entry.expectedAmount;
+
+                    return (
+                      <div
+                        key={entry.familyId}
+                        className="rounded-xl border border-slate-100 bg-white p-3 space-y-2"
+                      >
+                        {/* Header */}
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs text-slate-400 font-medium">{idx + 1}.</span>
+                            <span className="text-sm font-semibold text-stone-800">{entry.familyHead}</span>
+                          </div>
+                          {getStatusBadge(paid, expected)}
+                        </div>
+
+                        {/* Quick select buttons */}
+                        <div className="flex gap-1.5 flex-wrap">
+                          {JIMPITAN_QUICK_VALUES.map(val => (
+                            <button
+                              key={val}
+                              type="button"
+                              className={`h-8 px-3 rounded-lg text-xs font-bold border transition-colors ${
+                                paid === val
+                                  ? 'bg-emerald-600 text-white border-emerald-600 shadow-sm'
+                                  : 'border-slate-200 text-slate-600 bg-white hover:bg-slate-50 active:bg-slate-100'
+                              }`}
+                              onClick={() => setEntryPaidAmount(entry.familyId, val)}
+                            >
+                              {val === 0 ? '0' : val >= 1000 ? `${val / 1000}rb` : val}
+                            </button>
+                          ))}
+                          {/* Custom amount input */}
+                          <Input
+                            type="number"
+                            min={0}
+                            placeholder="Lain"
+                            value={paid > 0 && !JIMPITAN_QUICK_VALUES.includes(paid) ? paid : ''}
+                            onChange={e => {
+                              const v = parseInt(e.target.value);
+                              if (!isNaN(v) && v >= 0) {
+                                setEntryPaidAmount(entry.familyId, v);
+                              }
+                            }}
+                            className="h-8 w-20 text-xs rounded-lg border-slate-200 px-2"
+                          />
+                        </div>
+
+                        {/* Notes input */}
+                        <Input
+                          type="text"
+                          placeholder="Catatan..."
+                          value={notes}
+                          onChange={e => setEntryNotes(entry.familyId, e.target.value)}
+                          className="h-7 text-xs rounded-lg border-slate-200 px-2"
+                        />
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* Save Button */}
+                <Button
+                  className="w-full h-11 mt-4 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold text-sm shadow-sm"
+                  onClick={handleSaveCollection}
+                  disabled={savingCollection}
+                >
+                  {savingCollection ? (
+                    <>
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      Menyimpan...
+                    </>
+                  ) : (
+                    <>
+                      <Save className="w-4 h-4 mr-2" />
+                      Simpan Semua
+                    </>
+                  )}
+                </Button>
+              </>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      {/* ═══ Grup Ronda Saya ═══ */}
+      <Card className="rounded-2xl shadow-sm border border-teal-100 bg-white/90 overflow-hidden">
+        <div className="bg-teal-50 px-4 py-2.5 border-b border-teal-100 flex items-center gap-2">
+          <Shield className="w-4 h-4 text-teal-700" />
+          <span className="text-xs font-bold text-teal-800 uppercase tracking-wide">Grup Ronda Saya</span>
+        </div>
+        <CardContent className="p-4">
           {myGroup ? (
             <div className="space-y-3">
-              <div className="flex items-center justify-between bg-emerald-50 rounded-lg p-3">
+              <div className="flex items-center justify-between bg-gradient-to-r from-teal-50 to-emerald-50 rounded-xl p-3 border border-teal-100">
                 <div>
-                  <p className="text-sm font-semibold text-slate-800">{myGroup.name}</p>
-                  <p className="text-xs text-slate-500 mt-0.5">
+                  <p className="text-base font-bold text-stone-800">{myGroup.name}</p>
+                  <p className="text-xs text-stone-500 mt-0.5">
                     Hari: {DAY_LABELS[myGroup.dayOfWeek] || '-'}
                   </p>
                 </div>
-                <div className="flex items-center gap-1">
-                  <Users className="w-4 h-4 text-slate-400" />
-                  <span className="text-xs text-slate-500">
+                <div className="flex items-center gap-1.5 bg-white/70 rounded-lg px-2.5 py-1.5">
+                  <Users className="w-4 h-4 text-teal-600" />
+                  <span className="text-xs font-semibold text-teal-700">
                     {myGroup.families.length} KK
                   </span>
                 </div>
@@ -230,25 +558,25 @@ export function RondaPage({ userId, familyId, isAdmin }: RondaWargaPageProps) {
 
               {/* Attendance Stats */}
               <div className="grid grid-cols-3 gap-2">
-                <div className="text-center p-2 bg-emerald-50 rounded-lg">
-                  <p className="text-lg font-bold text-emerald-600">{hadirCount}</p>
-                  <p className="text-[10px] text-slate-500">Hadir</p>
+                <div className="text-center p-2.5 bg-emerald-50 rounded-xl border border-emerald-100">
+                  <p className="text-xl font-bold text-emerald-700">{hadirCount}</p>
+                  <p className="text-[10px] text-emerald-600 font-semibold">Hadir</p>
                 </div>
-                <div className="text-center p-2 bg-amber-50 rounded-lg">
-                  <p className="text-lg font-bold text-amber-600">{izinCount}</p>
-                  <p className="text-[10px] text-slate-500">Izin</p>
+                <div className="text-center p-2.5 bg-amber-50 rounded-xl border border-amber-100">
+                  <p className="text-xl font-bold text-amber-700">{izinCount}</p>
+                  <p className="text-[10px] text-amber-600 font-semibold">Izin</p>
                 </div>
-                <div className="text-center p-2 bg-red-50 rounded-lg">
-                  <p className="text-lg font-bold text-red-600">{tidakHadirCount}</p>
-                  <p className="text-[10px] text-slate-500">Tidak Hadir</p>
+                <div className="text-center p-2.5 bg-rose-50 rounded-xl border border-rose-100">
+                  <p className="text-xl font-bold text-rose-700">{tidakHadirCount}</p>
+                  <p className="text-[10px] text-rose-600 font-semibold">Tidak Hadir</p>
                 </div>
               </div>
             </div>
           ) : (
-            <div className="text-center py-4">
-              <Shield className="w-10 h-10 text-slate-300 mx-auto mb-2" />
-              <p className="text-sm text-slate-500">Keluarga Anda belum terdaftar di grup ronda</p>
-              <p className="text-xs text-slate-400 mt-1">
+            <div className="text-center py-6">
+              <Shield className="w-10 h-10 text-orange-200 mx-auto mb-2" />
+              <p className="text-sm font-semibold text-stone-600">Keluarga Anda belum terdaftar di grup ronda</p>
+              <p className="text-xs text-stone-500 mt-1">
                 Hubungi pengurus RT untuk penempatan grup
               </p>
             </div>
@@ -256,20 +584,18 @@ export function RondaPage({ userId, familyId, isAdmin }: RondaWargaPageProps) {
         </CardContent>
       </Card>
 
-      {/* Jadwal Ronda Bulan Ini */}
+      {/* ═══ Jadwal Ronda Bulan Ini ═══ */}
       {myGroup && (
-        <Card className="rounded-xl shadow-sm border border-slate-200">
-          <CardHeader className="pb-2 pt-4 px-4">
-            <div className="flex items-center gap-2">
-              <Calendar className="w-4 h-4 text-amber-600" />
-              <CardTitle className="text-sm font-semibold">Jadwal Ronda Bulan Ini</CardTitle>
-            </div>
-          </CardHeader>
-          <CardContent className="px-4 pb-4">
+        <Card className="rounded-2xl shadow-sm border border-amber-100 bg-white/90 overflow-hidden">
+          <div className="bg-amber-50 px-4 py-2.5 border-b border-amber-100 flex items-center gap-2">
+            <Calendar className="w-4 h-4 text-amber-700" />
+            <span className="text-xs font-bold text-amber-800 uppercase tracking-wide">Jadwal Ronda Bulan Ini</span>
+          </div>
+          <CardContent className="px-4 py-3">
             {schedules.length === 0 ? (
               <div className="text-center py-6">
-                <Calendar className="w-8 h-8 text-slate-300 mx-auto mb-2" />
-                <p className="text-sm text-slate-500">Belum ada jadwal ronda bulan ini</p>
+                <Calendar className="w-8 h-8 text-orange-200 mx-auto mb-2" />
+                <p className="text-sm text-stone-500">Belum ada jadwal ronda bulan ini</p>
               </div>
             ) : (
               <div className="space-y-2 max-h-80 overflow-y-auto">
@@ -281,55 +607,54 @@ export function RondaPage({ userId, familyId, isAdmin }: RondaWargaPageProps) {
                   return (
                     <div
                       key={schedule.id}
-                      className={`flex items-center justify-between py-2.5 px-3 rounded-lg ${
+                      className={`flex items-center justify-between py-2.5 px-3 rounded-xl border ${
                         isToday
-                          ? 'bg-amber-50 border border-amber-200'
+                          ? 'bg-amber-50 border-amber-200'
                           : isPast
-                          ? 'bg-slate-50'
-                          : 'bg-white border border-slate-100'
+                          ? 'bg-stone-50 border-stone-100'
+                          : 'bg-white border-orange-100'
                       }`}
                     >
                       <div className="flex items-center gap-3">
                         <div
-                          className={`w-9 h-9 rounded-lg flex items-center justify-center ${
+                          className={`w-10 h-10 rounded-xl flex items-center justify-center ${
                             isToday
-                              ? 'bg-amber-100'
+                              ? 'bg-amber-200'
                               : isPast
-                              ? 'bg-slate-100'
-                              : 'bg-emerald-50'
+                              ? 'bg-stone-100'
+                              : 'bg-teal-100'
                           }`}
                         >
                           {schedule.shift === 'MALAM' ? (
-                            <Moon className="w-4 h-4 text-amber-600" />
+                            <Moon className="w-5 h-5 text-amber-600" />
                           ) : (
-                            <Sun className="w-4 h-4 text-orange-500" />
+                            <Sun className="w-5 h-5 text-orange-500" />
                           )}
                         </div>
                         <div>
-                          <p className="text-sm font-medium text-slate-700">
+                          <p className="text-sm font-semibold text-stone-800">
                             {formatDateShort(schedule.date)}
                           </p>
-                          <p className="text-xs text-slate-500">
+                          <p className="text-xs text-stone-500">
                             {schedule.shift === 'MALAM' ? 'Malam' : 'Pagi'}
                             {isToday && ' • Hari ini'}
                           </p>
                         </div>
                       </div>
 
-                      {/* Status Kehadiran */}
                       {myLog ? (
                         <Badge
                           variant="secondary"
-                          className={`text-xs ${getStatusColor(myLog.status)}`}
+                          className={`text-xs font-semibold ${getStatusColor(myLog.status)}`}
                         >
                           {RONDA_STATUS_LABELS[myLog.status] || myLog.status}
                         </Badge>
                       ) : isPast ? (
-                        <Badge variant="secondary" className="text-xs bg-slate-100 text-slate-400">
+                        <Badge variant="secondary" className="text-xs bg-stone-100 text-stone-400">
                           Tidak dicatat
                         </Badge>
                       ) : (
-                        <Badge variant="secondary" className="text-xs bg-slate-50 text-slate-400">
+                        <Badge variant="secondary" className="text-xs bg-teal-50 text-teal-500">
                           Menunggu
                         </Badge>
                       )}
@@ -342,43 +667,41 @@ export function RondaPage({ userId, familyId, isAdmin }: RondaWargaPageProps) {
         </Card>
       )}
 
-      {/* Status Kehadiran Detail */}
+      {/* ═══ Riwayat Kehadiran ═══ */}
       {logs.length > 0 && (
-        <Card className="rounded-xl shadow-sm border border-slate-200">
-          <CardHeader className="pb-2 pt-4 px-4">
-            <div className="flex items-center gap-2">
-              <Clock className="w-4 h-4 text-slate-500" />
-              <CardTitle className="text-sm font-semibold">Riwayat Kehadiran</CardTitle>
-            </div>
-          </CardHeader>
-          <CardContent className="px-4 pb-4">
+        <Card className="rounded-2xl shadow-sm border border-orange-100 bg-white/90 overflow-hidden">
+          <div className="bg-orange-50 px-4 py-2.5 border-b border-orange-100 flex items-center gap-2">
+            <Clock className="w-4 h-4 text-orange-700" />
+            <span className="text-xs font-bold text-orange-800 uppercase tracking-wide">Riwayat Kehadiran</span>
+          </div>
+          <CardContent className="px-4 py-3">
             <div className="space-y-2 max-h-96 overflow-y-auto">
               {logs.map((log) => (
                 <div
                   key={log.id}
-                  className="flex items-center justify-between py-2 border-b border-slate-100 last:border-0"
+                  className="flex items-center justify-between py-2 border-b border-orange-50 last:border-0"
                 >
                   <div className="flex items-center gap-3">
                     <div
-                      className={`w-8 h-8 rounded-full flex items-center justify-center ${
+                      className={`w-9 h-9 rounded-full flex items-center justify-center ${
                         log.status === 'HADIR'
                           ? 'bg-emerald-100'
                           : log.status === 'IZIN'
                           ? 'bg-amber-100'
-                          : 'bg-red-100'
+                          : 'bg-rose-100'
                       }`}
                     >
                       {log.status === 'HADIR' ? (
-                        <CheckCircle className="w-3.5 h-3.5 text-emerald-600" />
+                        <CheckCircle className="w-4 h-4 text-emerald-600" />
                       ) : (
-                        <AlertCircle className="w-3.5 h-3.5 text-slate-500" />
+                        <AlertCircle className="w-4 h-4 text-stone-500" />
                       )}
                     </div>
                     <div>
-                      <p className="text-sm font-medium text-slate-700">
+                      <p className="text-sm font-semibold text-stone-800">
                         {log.schedule.group.name}
                       </p>
-                      <p className="text-xs text-slate-500">
+                      <p className="text-xs text-stone-500">
                         {formatDateShort(log.schedule.date)} •{' '}
                         {log.schedule.shift === 'MALAM' ? 'Malam' : 'Pagi'}
                       </p>
@@ -386,7 +709,7 @@ export function RondaPage({ userId, familyId, isAdmin }: RondaWargaPageProps) {
                   </div>
                   <Badge
                     variant="secondary"
-                    className={`text-xs ${getStatusColor(log.status)}`}
+                    className={`text-xs font-semibold ${getStatusColor(log.status)}`}
                   >
                     {RONDA_STATUS_LABELS[log.status] || log.status}
                   </Badge>

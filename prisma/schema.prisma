@@ -43,6 +43,15 @@ model Family {
   address         String
   rondaGroupId    String?  // FK ke RondaGroup
   isActive        Boolean  @default(true)
+
+  // Jimpitan settings per KK
+  jimpitanType    String   @default("HARIAN")  // HARIAN (Rp.1000/malam), BULANAN (custom)
+  jimpitanAmount  Int      @default(1000)       // Harian=1000, Bulanan=custom (30000/50000/dll)
+
+  // Ronda status per KK
+  rondaStatus     String   @default("AKTIF")   // AKTIF (ikut ronda), KASEPUHAN (dispensasi), BAYAR_IURAN (bayar pengganti)
+  rondaFee        Int      @default(0)          // Iuran ronda per selapanan untuk BAYAR_IURAN
+
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
@@ -54,6 +63,7 @@ model Family {
   fines           Fine[]
   shortages       JimpitanShortage[]
   familyMembers   FamilyMember[]
+  levyItems       CustomLevyItem[]
 }
 
 // ============================================
@@ -189,11 +199,23 @@ model JimpitanShortage {
 
 model Selapanan {
   id              String   @id @default(cuid())
+  number          Int      @default(0) // Nomor selapanan ke-berapa
   periodeStart    String   // YYYY-MM-DD
   periodeEnd      String   // YYYY-MM-DD
   meetingDate     String   // YYYY-MM-DD (Sabtu malam Minggu Pon)
   meetingLocation String?
   status          String   @default("UPCOMING") // UPCOMING, COMPLETED, CANCELLED
+
+  // Financial recap
+  jimpitanDaily   Int      @default(0)  // Total jimpitan harian terkumpul
+  jimpitanMonthly Int      @default(0)  // Total iuran bulanan terkumpul
+  rondaFeeTotal   Int      @default(0)  // Total iuran ronda terkumpul
+  shortagePaid    Int      @default(0)  // Total kurangan jimpitan yang dibayar
+  finePaid        Int      @default(0)  // Total denda yang dibayar
+  levyPaid        Int      @default(0)  // Total tarikan lain yang dibayar
+  otherIncome     Int      @default(0)  // Pemasukan lain
+  totalIncome     Int      @default(0)  // Total semua pemasukan
+
   notes           String?
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
@@ -201,6 +223,7 @@ model Selapanan {
   details         SelapananDetail[]
   transactions    Transaction[]
   shortages       JimpitanShortage[]
+  levyPayments    CustomLevyPayment[]
 }
 
 model SelapananDetail {
@@ -298,6 +321,52 @@ model Letter {
   updatedAt   DateTime @updatedAt
 
   user        User     @relation(fields: [userId], references: [id])
+}
+
+// ============================================
+// TARIKAN LAIN (CUSTOM LEVY) — digenerate admin
+// ============================================
+
+model CustomLevy {
+  id          String   @id @default(cuid())
+  name        String   // Nama program tarikan
+  description String?
+  isActive    Boolean  @default(true) // false = program berakhir (semua lunas)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  items       CustomLevyItem[]
+}
+
+model CustomLevyItem {
+  id              String   @id @default(cuid())
+  levyId          String
+  familyId        String
+  totalAmount     Int      // Total yang harus dibayar
+  installments    Int      @default(1) // 1, 2, atau 3x cicilan
+  perInstallment  Int      // totalAmount / installments
+  paidAmount      Int      @default(0)
+  paidInstallments Int     @default(0)
+  status          String   @default("ACTIVE") // ACTIVE, COMPLETED
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  levy            CustomLevy          @relation(fields: [levyId], references: [id])
+  family          Family              @relation(fields: [familyId], references: [id])
+  payments        CustomLevyPayment[]
+}
+
+model CustomLevyPayment {
+  id                String   @id @default(cuid())
+  itemId            String
+  selapananId       String?
+  amount            Int      // Jumlah yang dibayar
+  installmentNumber Int      // Cicilan ke-berapa
+  notes             String?
+  createdAt         DateTime @default(now())
+
+  item              CustomLevyItem @relation(fields: [itemId], references: [id])
+  selapanan         Selapanan?     @relation(fields: [selapananId], references: [id])
 }
 
 // ============================================

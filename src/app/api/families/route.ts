@@ -103,7 +103,7 @@ export async function PUT(request: NextRequest) {
     if (!authUser) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     if (!isAdmin(authUser.role)) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
 
-    const { id, familyHead, address, rondaGroupId, isActive } = await request.json();
+    const { id, familyHead, address, rondaGroupId, isActive, jimpitanType, jimpitanAmount, rondaStatus, rondaFee } = await request.json();
 
     if (!id) return NextResponse.json({ error: 'ID wajib diisi' }, { status: 400 });
 
@@ -112,6 +112,10 @@ export async function PUT(request: NextRequest) {
     if (address !== undefined) data.address = address;
     if (rondaGroupId !== undefined) data.rondaGroupId = rondaGroupId || null;
     if (isActive !== undefined) data.isActive = isActive;
+    if (jimpitanType !== undefined) data.jimpitanType = jimpitanType;
+    if (jimpitanAmount !== undefined) data.jimpitanAmount = jimpitanAmount;
+    if (rondaStatus !== undefined) data.rondaStatus = rondaStatus;
+    if (rondaFee !== undefined) data.rondaFee = rondaFee;
 
     // If familyHead name changes, also update the KK member's fullName
     if (familyHead) {

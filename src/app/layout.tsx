@@ -3,11 +3,11 @@ import "./globals.css";
 import { Toaster } from "@/components/ui/toaster";
 
 export const metadata: Metadata = {
-  title: "Management RT - Sistem Manajemen RT Digital",
+  title: "Waduk Landung - Sistem Manajemen RT Digital",
   description: "Aplikasi manajemen RT untuk data warga, ronda, jimpitan, selapanan, keuangan, dan lainnya",
   manifest: "/manifest.json",
   icons: {
-    icon: "/logo.svg",
+    icon: "/logo.png",
   },
 };
 

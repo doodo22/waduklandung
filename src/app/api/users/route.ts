@@ -80,11 +80,53 @@ export async function PUT(request: NextRequest) {
     // Admin can update all fields
     const data: Record<string, unknown> = {};
     if (role !== undefined) data.role = role;
-    if (status !== undefined) data.status = status;
     if (name !== undefined) data.name = name;
     if (phone !== undefined) data.phone = phone;
     if (address !== undefined) data.address = address;
     if (familyId !== undefined) data.familyId = familyId;
+
+    // Special handling: when approving a PENDING user, auto-create Family + FamilyMember
+    if (status === 'ACTIVE') {
+      const existingUser = await db.user.findUnique({ where: { id } });
+      if (existingUser && existingUser.status === 'PENDING') {
+        data.status = 'ACTIVE';
+
+        // Create Family record with the user as KK
+        const family = await db.family.create({
+          data: {
+            familyHead: existingUser.name,
+            address: existingUser.address || 'Belum diisi',
+            familyMembers: {
+              create: {
+                userId: existingUser.id,
+                fullName: existingUser.name,
+                gender: 'LAKI_LAKI',
+                relationship: 'KEPALA_KELUARGA',
+                isFamilyHead: true,
+                maritalStatus: 'KAWIN',
+                citizenship: 'WNI',
+              },
+            },
+          },
+        });
+
+        // Link user to the new family
+        data.familyId = family.id;
+
+        const user = await db.user.update({
+          where: { id },
+          data,
+          select: {
+            id: true, username: true, name: true, role: true,
+            status: true, phone: true, address: true, familyId: true,
+          },
+        });
+
+        return NextResponse.json({ user });
+      }
+    }
+
+    if (status !== undefined) data.status = status;
 
     const user = await db.user.update({
       where: { id },

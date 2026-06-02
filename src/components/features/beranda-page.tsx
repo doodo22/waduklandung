@@ -13,6 +13,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
+import Image from 'next/image';
 import {
   Megaphone,
   Shield,
@@ -23,6 +24,9 @@ import {
   AlertCircle,
   ChevronRight,
   Pin,
+  HandCoins,
+  Users,
+  Sparkles,
 } from 'lucide-react';
 import { useNavStore } from '@/stores/nav-store';
 
@@ -117,12 +121,13 @@ export function BerandaPage({ userId, familyId, isAdmin }: BerandaPageProps) {
   if (loading) {
     return (
       <div className="space-y-4">
+        <div className="animate-pulse bg-gradient-to-r from-teal-700 to-teal-600 rounded-2xl p-5 h-32" />
         {[1, 2, 3].map((i) => (
-          <Card key={i} className="rounded-xl shadow-sm border border-slate-200">
+          <Card key={i} className="rounded-2xl shadow-sm border border-orange-100 bg-white/80">
             <CardContent className="p-4">
               <div className="animate-pulse space-y-3">
-                <div className="h-4 bg-slate-200 rounded w-3/4" />
-                <div className="h-4 bg-slate-200 rounded w-1/2" />
+                <div className="h-4 bg-orange-100 rounded w-3/4" />
+                <div className="h-4 bg-orange-100 rounded w-1/2" />
               </div>
             </CardContent>
           </Card>
@@ -134,9 +139,9 @@ export function BerandaPage({ userId, familyId, isAdmin }: BerandaPageProps) {
   if (!data) {
     return (
       <div className="text-center py-12">
-        <AlertCircle className="w-10 h-10 text-slate-300 mx-auto mb-3" />
-        <p className="text-sm text-slate-500">Gagal memuat data</p>
-        <Button variant="outline" size="sm" className="mt-3 h-9" onClick={loadDashboard}>
+        <AlertCircle className="w-10 h-10 text-teal-300 mx-auto mb-3" />
+        <p className="text-sm text-stone-500">Gagal memuat data</p>
+        <Button variant="outline" size="sm" className="mt-3 h-9 border-teal-200 text-teal-700" onClick={loadDashboard}>
           Coba Lagi
         </Button>
       </div>
@@ -151,182 +156,175 @@ export function BerandaPage({ userId, familyId, isAdmin }: BerandaPageProps) {
   const totalUnpaidJimpitan = unpaidJimpitan.reduce((sum, j) => sum + j.amount, 0);
 
   return (
-    <div className="space-y-4">
-      {/* Welcome */}
-      <div>
-        <h2 className="text-lg font-semibold text-slate-800">
-          Halo, {data.user.name}! 👋
-        </h2>
-        <p className="text-sm text-slate-500 mt-0.5">
-          Selamat datang di {APP_NAME}
-        </p>
+    <div className="space-y-4 -mt-1">
+      {/* ═══ Hero Welcome ═══ */}
+      <div className="bg-gradient-to-br from-teal-700 via-teal-600 to-emerald-600 rounded-2xl p-5 text-white shadow-lg relative overflow-hidden">
+        {/* Decorative circles */}
+        <div className="absolute -right-6 -top-6 w-28 h-28 rounded-full bg-white/5" />
+        <div className="absolute -right-2 -bottom-8 w-20 h-20 rounded-full bg-white/5" />
+        <div className="absolute right-12 bottom-2 w-10 h-10 rounded-full bg-amber-400/10" />
+
+        <div className="flex items-center gap-3 relative z-10">
+          <Image
+            src="/logo.png"
+            alt="Waduk Landung"
+            width={48}
+            height={48}
+            className="object-contain drop-shadow-md"
+          />
+          <div className="flex-1 min-w-0">
+            <p className="text-teal-200 text-xs font-medium">Selamat datang di</p>
+            <h2 className="text-lg font-bold tracking-wide text-white">{APP_NAME}</h2>
+            <p className="text-sm text-teal-100 mt-0.5">Halo, {data.user.name}! 👋</p>
+          </div>
+        </div>
+
+        {/* Quick stats row */}
+        <div className="grid grid-cols-3 gap-2 mt-4 relative z-10">
+          <div className="bg-white/15 backdrop-blur-sm rounded-xl p-2.5 text-center">
+            <p className="text-xl font-bold text-white">{unpaidFinesCount}</p>
+            <p className="text-[10px] text-teal-200 font-medium">Denda</p>
+          </div>
+          <div className="bg-white/15 backdrop-blur-sm rounded-xl p-2.5 text-center">
+            <p className="text-xl font-bold text-white">{data.myRonda.length}</p>
+            <p className="text-[10px] text-teal-200 font-medium">Jadwal Ronda</p>
+          </div>
+          <div className="bg-white/15 backdrop-blur-sm rounded-xl p-2.5 text-center">
+            <p className="text-xl font-bold text-white">{data.upcomingSelapanan ? '1' : '0'}</p>
+            <p className="text-[10px] text-teal-200 font-medium">Selapanan</p>
+          </div>
+        </div>
       </div>
 
-      {/* Quick Stats */}
-      <div className="grid grid-cols-3 gap-3">
-        <Card
-          className="rounded-xl shadow-sm border border-slate-200 cursor-pointer hover:shadow-md transition-shadow"
-          onClick={() => setPage('iuran')}
-        >
-          <CardContent className="p-3 text-center">
-            <div className="w-9 h-9 rounded-lg bg-red-50 flex items-center justify-center mx-auto mb-2">
-              <AlertCircle className="w-4 h-4 text-red-500" />
-            </div>
-            <p className="text-lg font-bold text-slate-800">
-              {unpaidFinesCount}
-            </p>
-            <p className="text-[11px] text-slate-500 mt-0.5">Denda Belum Bayar</p>
-          </CardContent>
-        </Card>
-
-        <Card
-          className="rounded-xl shadow-sm border border-slate-200 cursor-pointer hover:shadow-md transition-shadow"
-          onClick={() => setPage('ronda')}
-        >
-          <CardContent className="p-3 text-center">
-            <div className="w-9 h-9 rounded-lg bg-green-50 flex items-center justify-center mx-auto mb-2">
-              <Shield className="w-4 h-4 text-green-600" />
-            </div>
-            <p className="text-lg font-bold text-slate-800">
-              {data.myRonda.length}
-            </p>
-            <p className="text-[11px] text-slate-500 mt-0.5">Jadwal Ronda</p>
-          </CardContent>
-        </Card>
-
-        <Card
-          className="rounded-xl shadow-sm border border-slate-200 cursor-pointer hover:shadow-md transition-shadow"
-          onClick={() => setPage('selapanan' as string)}
-        >
-          <CardContent className="p-3 text-center">
-            <div className="w-9 h-9 rounded-lg bg-amber-50 flex items-center justify-center mx-auto mb-2">
-              <Calendar className="w-4 h-4 text-amber-600" />
-            </div>
-            <p className="text-lg font-bold text-slate-800">
-              {data.upcomingSelapanan ? '1' : '0'}
-            </p>
-            <p className="text-[11px] text-slate-500 mt-0.5">Selapanan</p>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Financial Summary */}
+      {/* ═══ Financial Alert ═══ */}
       {(totalUnpaidFines > 0 || totalUnpaidJimpitan > 0) && (
-        <Card className="rounded-xl shadow-sm border border-red-200 bg-red-50/50">
+        <Card className="rounded-2xl shadow-sm border border-rose-200 bg-gradient-to-r from-rose-50 to-orange-50">
           <CardContent className="p-4">
-            <div className="flex items-center gap-2 mb-2">
-              <Wallet className="w-4 h-4 text-red-600" />
-              <p className="text-sm font-semibold text-red-700">Tagihan Belum Dibayar</p>
+            <div className="flex items-center gap-2 mb-3">
+              <div className="w-8 h-8 rounded-lg bg-rose-100 flex items-center justify-center">
+                <Wallet className="w-4 h-4 text-rose-600" />
+              </div>
+              <p className="text-sm font-bold text-rose-800">Tagihan Belum Dibayar</p>
             </div>
-            <div className="space-y-1.5">
+            <div className="space-y-2">
               {totalUnpaidJimpitan > 0 && (
-                <div className="flex justify-between text-sm">
-                  <span className="text-slate-600">Jimpitan</span>
-                  <span className="font-medium text-slate-800">{formatCurrency(totalUnpaidJimpitan)}</span>
+                <div className="flex justify-between items-center bg-white/70 rounded-lg p-2.5">
+                  <span className="text-sm text-stone-600 font-medium">Jimpitan</span>
+                  <span className="text-sm font-bold text-stone-800">{formatCurrency(totalUnpaidJimpitan)}</span>
                 </div>
               )}
               {totalUnpaidFines > 0 && (
-                <div className="flex justify-between text-sm">
-                  <span className="text-slate-600">Denda</span>
-                  <span className="font-medium text-slate-800">{formatCurrency(totalUnpaidFines)}</span>
+                <div className="flex justify-between items-center bg-white/70 rounded-lg p-2.5">
+                  <span className="text-sm text-stone-600 font-medium">Denda</span>
+                  <span className="text-sm font-bold text-stone-800">{formatCurrency(totalUnpaidFines)}</span>
                 </div>
               )}
-              <Separator />
-              <div className="flex justify-between text-sm font-semibold">
-                <span className="text-red-700">Total</span>
-                <span className="text-red-700">{formatCurrency(totalUnpaidJimpitan + totalUnpaidFines)}</span>
+              <div className="flex justify-between items-center bg-rose-100/80 rounded-lg p-2.5">
+                <span className="text-sm font-bold text-rose-800">Total</span>
+                <span className="text-base font-bold text-rose-700">{formatCurrency(totalUnpaidJimpitan + totalUnpaidFines)}</span>
               </div>
             </div>
           </CardContent>
         </Card>
       )}
 
-      {/* Quick Actions */}
-      <div className="grid grid-cols-2 gap-3">
-        <Button
-          variant="outline"
-          className="h-12 rounded-xl border-slate-200 justify-start gap-2 text-sm font-medium"
+      {/* ═══ Quick Actions ═══ */}
+      <div className="grid grid-cols-3 gap-3">
+        <button
           onClick={() => setPage('iuran')}
+          className="bg-white rounded-2xl border border-orange-100 shadow-sm p-4 flex flex-col items-center gap-2 hover:shadow-md hover:border-orange-200 transition-all active:scale-95"
         >
-          <Wallet className="w-4 h-4 text-slate-600" />
-          Lihat Jimpitan
-        </Button>
-        <Button
-          variant="outline"
-          className="h-12 rounded-xl border-slate-200 justify-start gap-2 text-sm font-medium"
-          onClick={() => {
-            setPage('surat');
-          }}
+          <div className="w-11 h-11 rounded-xl bg-amber-100 flex items-center justify-center">
+            <HandCoins className="w-5 h-5 text-amber-700" />
+          </div>
+          <span className="text-xs font-semibold text-stone-700">Iuran</span>
+        </button>
+        <button
+          onClick={() => setPage('ronda')}
+          className="bg-white rounded-2xl border border-teal-100 shadow-sm p-4 flex flex-col items-center gap-2 hover:shadow-md hover:border-teal-200 transition-all active:scale-95"
         >
-          <FileText className="w-4 h-4 text-slate-600" />
-          Ajukan Surat
-        </Button>
+          <div className="w-11 h-11 rounded-xl bg-teal-100 flex items-center justify-center">
+            <Shield className="w-5 h-5 text-teal-700" />
+          </div>
+          <span className="text-xs font-semibold text-stone-700">Ronda</span>
+        </button>
+        <button
+          onClick={() => setPage('selapanan' as string)}
+          className="bg-white rounded-2xl border border-emerald-100 shadow-sm p-4 flex flex-col items-center gap-2 hover:shadow-md hover:border-emerald-200 transition-all active:scale-95"
+        >
+          <div className="w-11 h-11 rounded-xl bg-emerald-100 flex items-center justify-center">
+            <Calendar className="w-5 h-5 text-emerald-700" />
+          </div>
+          <span className="text-xs font-semibold text-stone-700">Selapanan</span>
+        </button>
       </div>
 
-      {/* Upcoming Selapanan */}
+      {/* ═══ Upcoming Selapanan ═══ */}
       {data.upcomingSelapanan && (
-        <Card className="rounded-xl shadow-sm border border-slate-200">
+        <Card className="rounded-2xl shadow-sm border border-amber-200 bg-gradient-to-br from-amber-50 to-orange-50 overflow-hidden">
+          <div className="bg-amber-500/10 px-4 py-2.5 border-b border-amber-200/50 flex items-center gap-2">
+            <Sparkles className="w-4 h-4 text-amber-600" />
+            <span className="text-xs font-bold text-amber-800 uppercase tracking-wide">Selapanan Akan Datang</span>
+          </div>
           <CardContent className="p-4">
-            <div className="flex items-center gap-2 mb-2">
-              <Calendar className="w-4 h-4 text-amber-600" />
-              <p className="text-sm font-semibold text-slate-800">Selapanan Akan Datang</p>
-            </div>
-            <div className="space-y-1">
-              <p className="text-sm text-slate-600">
-                <span className="font-medium">Tanggal:</span>{' '}
-                {formatDateShort(data.upcomingSelapanan.meetingDate)}
-              </p>
+            <div className="space-y-2">
+              <div className="flex items-center gap-2">
+                <Calendar className="w-4 h-4 text-amber-600 shrink-0" />
+                <span className="text-sm font-semibold text-stone-800">
+                  {formatDateShort(data.upcomingSelapanan.meetingDate)}
+                </span>
+              </div>
               {data.upcomingSelapanan.meetingLocation && (
-                <p className="text-sm text-slate-600">
-                  <span className="font-medium">Lokasi:</span>{' '}
-                  {data.upcomingSelapanan.meetingLocation}
-                </p>
+                <div className="flex items-center gap-2">
+                  <Users className="w-4 h-4 text-amber-600 shrink-0" />
+                  <span className="text-sm text-stone-600">
+                    {data.upcomingSelapanan.meetingLocation}
+                  </span>
+                </div>
               )}
             </div>
           </CardContent>
         </Card>
       )}
 
-      {/* Recent Ronda */}
+      {/* ═══ Recent Ronda ═══ */}
       {data.myRonda.length > 0 && (
-        <Card className="rounded-xl shadow-sm border border-slate-200">
-          <CardHeader className="pb-2 pt-4 px-4">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <Shield className="w-4 h-4 text-green-600" />
-                <CardTitle className="text-sm font-semibold">Ronda Bulan Ini</CardTitle>
-              </div>
-              <button
-                onClick={() => setPage('ronda')}
-                className="text-xs text-slate-500 hover:text-slate-700 flex items-center gap-1"
-              >
-                Lihat Semua <ChevronRight className="w-3 h-3" />
-              </button>
+        <Card className="rounded-2xl shadow-sm border border-teal-100 bg-white/90 overflow-hidden">
+          <div className="bg-teal-50 px-4 py-2.5 border-b border-teal-100 flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Shield className="w-4 h-4 text-teal-700" />
+              <span className="text-xs font-bold text-teal-800 uppercase tracking-wide">Ronda Bulan Ini</span>
             </div>
-          </CardHeader>
-          <CardContent className="px-4 pb-4">
+            <button
+              onClick={() => setPage('ronda')}
+              className="text-xs text-teal-600 hover:text-teal-800 font-semibold flex items-center gap-0.5"
+            >
+              Semua <ChevronRight className="w-3 h-3" />
+            </button>
+          </div>
+          <CardContent className="px-4 py-3">
             <div className="space-y-2">
               {data.myRonda.slice(0, 3).map((log) => (
                 <div
                   key={log.id}
-                  className="flex items-center justify-between py-2 border-b border-slate-100 last:border-0"
+                  className="flex items-center justify-between py-2 border-b border-orange-50 last:border-0"
                 >
                   <div>
-                    <p className="text-sm font-medium text-slate-700">
+                    <p className="text-sm font-semibold text-stone-800">
                       {log.schedule.group.name}
                     </p>
-                    <p className="text-xs text-slate-500">
+                    <p className="text-xs text-stone-500">
                       {formatDateShort(log.schedule.date)} • {log.schedule.shift === 'MALAM' ? 'Malam' : 'Pagi'}
                     </p>
                   </div>
                   <Badge
                     variant="secondary"
-                    className={`text-xs ${
+                    className={`text-xs font-semibold ${
                       log.status === 'HADIR'
-                        ? 'bg-green-100 text-green-700'
+                        ? 'bg-emerald-100 text-emerald-700'
                         : log.status === 'IZIN'
-                        ? 'bg-yellow-100 text-yellow-700'
-                        : 'bg-red-100 text-red-700'
+                        ? 'bg-amber-100 text-amber-700'
+                        : 'bg-rose-100 text-rose-700'
                     }`}
                   >
                     {RONDA_STATUS_LABELS[log.status] || log.status}
@@ -338,39 +336,37 @@ export function BerandaPage({ userId, familyId, isAdmin }: BerandaPageProps) {
         </Card>
       )}
 
-      {/* Announcements */}
-      <Card className="rounded-xl shadow-sm border border-slate-200">
-        <CardHeader className="pb-2 pt-4 px-4">
-          <div className="flex items-center gap-2">
-            <Megaphone className="w-4 h-4 text-slate-600" />
-            <CardTitle className="text-sm font-semibold">Pengumuman</CardTitle>
-          </div>
-        </CardHeader>
-        <CardContent className="px-4 pb-4">
+      {/* ═══ Pengumuman ═══ */}
+      <Card className="rounded-2xl shadow-sm border border-orange-100 bg-white/90 overflow-hidden">
+        <div className="bg-amber-50 px-4 py-2.5 border-b border-amber-100 flex items-center gap-2">
+          <Megaphone className="w-4 h-4 text-amber-700" />
+          <span className="text-xs font-bold text-amber-800 uppercase tracking-wide">Pengumuman</span>
+        </div>
+        <CardContent className="px-4 py-3">
           {data.announcements.length === 0 ? (
             <div className="text-center py-4">
-              <Megaphone className="w-8 h-8 text-slate-300 mx-auto mb-2" />
-              <p className="text-sm text-slate-500">Belum ada pengumuman</p>
+              <Megaphone className="w-8 h-8 text-orange-200 mx-auto mb-2" />
+              <p className="text-sm text-stone-500">Belum ada pengumuman</p>
             </div>
           ) : (
             <div className="space-y-3 max-h-80 overflow-y-auto">
               {data.announcements.map((ann) => (
                 <div
                   key={ann.id}
-                  className="py-2 border-b border-slate-100 last:border-0"
+                  className="py-2 border-b border-orange-50 last:border-0"
                 >
                   <div className="flex items-start gap-2">
                     {ann.isPinned && (
                       <Pin className="w-3.5 h-3.5 text-amber-500 mt-0.5 shrink-0" />
                     )}
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium text-slate-800 leading-snug">
+                      <p className="text-sm font-semibold text-stone-800 leading-snug">
                         {ann.title}
                       </p>
-                      <p className="text-xs text-slate-500 mt-1 line-clamp-2">
+                      <p className="text-xs text-stone-500 mt-1 line-clamp-2">
                         {ann.content}
                       </p>
-                      <p className="text-[11px] text-slate-400 mt-1.5 flex items-center gap-1">
+                      <p className="text-[11px] text-stone-400 mt-1.5 flex items-center gap-1">
                         <Clock className="w-3 h-3" />
                         {formatDateShort(ann.createdAt)}
                       </p>
@@ -383,36 +379,34 @@ export function BerandaPage({ userId, familyId, isAdmin }: BerandaPageProps) {
         </CardContent>
       </Card>
 
-      {/* My Letters */}
+      {/* ═══ Surat Terbaru ═══ */}
       {data.myLetters.length > 0 && (
-        <Card className="rounded-xl shadow-sm border border-slate-200">
-          <CardHeader className="pb-2 pt-4 px-4">
-            <div className="flex items-center gap-2">
-              <FileText className="w-4 h-4 text-slate-600" />
-              <CardTitle className="text-sm font-semibold">Surat Terbaru</CardTitle>
-            </div>
-          </CardHeader>
-          <CardContent className="px-4 pb-4">
+        <Card className="rounded-2xl shadow-sm border border-orange-100 bg-white/90 overflow-hidden">
+          <div className="bg-orange-50 px-4 py-2.5 border-b border-orange-100 flex items-center gap-2">
+            <FileText className="w-4 h-4 text-orange-700" />
+            <span className="text-xs font-bold text-orange-800 uppercase tracking-wide">Surat Terbaru</span>
+          </div>
+          <CardContent className="px-4 py-3">
             <div className="space-y-2">
               {data.myLetters.slice(0, 3).map((letter) => (
                 <div
                   key={letter.id}
-                  className="flex items-center justify-between py-2 border-b border-slate-100 last:border-0"
+                  className="flex items-center justify-between py-2 border-b border-orange-50 last:border-0"
                 >
                   <div>
-                    <p className="text-sm font-medium text-slate-700">{letter.purpose}</p>
-                    <p className="text-xs text-slate-500">{formatDateShort(letter.createdAt)}</p>
+                    <p className="text-sm font-semibold text-stone-800">{letter.purpose}</p>
+                    <p className="text-xs text-stone-500">{formatDateShort(letter.createdAt)}</p>
                   </div>
                   <Badge
                     variant="secondary"
-                    className={`text-xs ${
+                    className={`text-xs font-semibold ${
                       letter.status === 'COMPLETED'
-                        ? 'bg-green-100 text-green-700'
+                        ? 'bg-emerald-100 text-emerald-700'
                         : letter.status === 'APPROVED'
-                        ? 'bg-blue-100 text-blue-700'
+                        ? 'bg-teal-100 text-teal-700'
                         : letter.status === 'REJECTED'
-                        ? 'bg-red-100 text-red-700'
-                        : 'bg-yellow-100 text-yellow-700'
+                        ? 'bg-rose-100 text-rose-700'
+                        : 'bg-amber-100 text-amber-700'
                     }`}
                   >
                     {letter.status === 'PENDING'

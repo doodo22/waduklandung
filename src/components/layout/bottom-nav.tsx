@@ -21,7 +21,7 @@ interface BottomNavProps {
 
 export function BottomNav({ items, currentPage, onNavigate }: BottomNavProps) {
   return (
-    <nav className="fixed bottom-0 left-0 right-0 bg-white border-t border-slate-200 z-40 safe-area-bottom">
+    <nav className="fixed bottom-0 left-0 right-0 bg-white border-t border-teal-100 z-40 safe-area-bottom shadow-[0_-2px_10px_rgba(0,0,0,0.05)]">
       <div className="flex items-center justify-around max-w-lg mx-auto">
         {items.map((item) => {
           const Icon = iconMap[item.icon] || Home;
@@ -31,12 +31,17 @@ export function BottomNav({ items, currentPage, onNavigate }: BottomNavProps) {
               key={item.id}
               onClick={() => onNavigate(item.id)}
               className={cn(
-                'flex flex-col items-center justify-center py-2 px-3 min-w-[64px] transition-colors',
-                isActive ? 'text-slate-800' : 'text-slate-400'
+                'flex flex-col items-center justify-center py-2 px-4 min-w-[64px] transition-all',
+                isActive ? 'text-teal-700' : 'text-stone-400'
               )}
             >
-              <Icon className={cn('w-5 h-5', isActive && 'text-slate-800')} />
-              <span className={cn('text-[10px] mt-1 font-medium', isActive ? 'text-slate-800' : 'text-slate-400')}>
+              <div className={cn(
+                'flex items-center justify-center w-8 h-8 rounded-full transition-all',
+                isActive ? 'bg-teal-100' : ''
+              )}>
+                <Icon className={cn('w-5 h-5', isActive ? 'text-teal-700' : 'text-stone-400')} />
+              </div>
+              <span className={cn('text-[10px] mt-1 font-semibold', isActive ? 'text-teal-700' : 'text-stone-400')}>
                 {item.label}
               </span>
             </button>

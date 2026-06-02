@@ -1,6 +1,6 @@
 {
-  "name": "Management RT",
-  "short_name": "RT App",
+  "name": "Waduk Landung",
+  "short_name": "Waduk Landung",
   "description": "Sistem Manajemen RT Digital",
   "start_url": "/",
   "display": "standalone",
@@ -9,9 +9,9 @@
   "orientation": "portrait",
   "icons": [
     {
-      "src": "/logo.svg",
-      "sizes": "any",
-      "type": "image/svg+xml",
+      "src": "/logo.png",
+      "sizes": "640x640",
+      "type": "image/png",
       "purpose": "any maskable"
     }
   ]

@@ -9,6 +9,7 @@ import {
 import { useState } from 'react';
 import { useAuthStore } from '@/stores/auth-store';
 import { ROLE_LABELS } from '@/lib/constants';
+import Image from 'next/image';
 
 const iconMap: Record<string, React.ComponentType<{ className?: string }>> = {
   LayoutDashboard, UserCheck, Users, Shield, Calendar, Wallet,
@@ -36,9 +37,20 @@ export function Sidebar({ items, currentPage, onNavigate, userName, userRole }: 
   const sidebarContent = (
     <div className="flex flex-col h-full">
       {/* Logo */}
-      <div className="p-6 border-b border-slate-200">
-        <h1 className="text-lg font-bold text-slate-800">Management RT</h1>
-        <p className="text-xs text-slate-500 mt-1">Sistem Manajemen Digital</p>
+      <div className="p-5 border-b border-slate-200">
+        <div className="flex items-center gap-3">
+          <Image
+            src="/logo.png"
+            alt="Waduk Landung"
+            width={36}
+            height={36}
+            className="object-contain"
+          />
+          <div>
+            <h1 className="text-sm font-bold text-slate-800 tracking-wide">WADUK LANDUNG</h1>
+            <p className="text-[11px] text-slate-500">Sistem Manajemen RT Digital</p>
+          </div>
+        </div>
       </div>
 
       {/* User info */}

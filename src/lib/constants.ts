@@ -2,7 +2,7 @@
 // APPLICATION CONSTANTS
 // ============================================
 
-export const APP_NAME = 'Management RT';
+export const APP_NAME = 'Waduk Landung';
 export const APP_DESCRIPTION = 'Sistem Manajemen RT Digital';
 
 // User Roles
@@ -164,7 +164,8 @@ export const GENDER_OPTIONS = [
 // Family Member — Hubungan dalam Keluarga
 export const RELATIONSHIP_OPTIONS = [
   { value: 'KEPALA_KELUARGA', label: 'Kepala Keluarga' },
-  { value: 'SUAMI_ISTRI', label: 'Suami/Istri' },
+  { value: 'SUAMI', label: 'Suami' },
+  { value: 'ISTRI', label: 'Istri' },
   { value: 'ANAK', label: 'Anak' },
   { value: 'MENANTU', label: 'Menantu' },
   { value: 'CUCU', label: 'Cucu' },
@@ -175,9 +176,11 @@ export const RELATIONSHIP_OPTIONS = [
   { value: 'LAINNYA', label: 'Lainnya' },
 ] as const;
 
-export const RELATIONSHIP_LABELS: Record<string, string> = Object.fromEntries(
-  RELATIONSHIP_OPTIONS.map(o => [o.value, o.label])
-);
+export const RELATIONSHIP_LABELS: Record<string, string> = {
+  ...Object.fromEntries(RELATIONSHIP_OPTIONS.map(o => [o.value, o.label])),
+  // Legacy compatibility
+  SUAMI_ISTRI: 'Suami/Istri',
+};
 
 // Family Member — Status Perkawinan
 export const MARITAL_STATUS_OPTIONS = [
@@ -214,6 +217,36 @@ export const CITIZENSHIP_OPTIONS = [
   { value: 'WNI', label: 'WNI' },
   { value: 'WNA', label: 'WNA' },
 ] as const;
+
+// Family — Jimpitan Type
+export const JIMPITAN_TYPE_OPTIONS = [
+  { value: 'HARIAN', label: 'Harian (Rp.1.000/malam)' },
+  { value: 'BULANAN', label: 'Bulanan (custom)' },
+] as const;
+
+export const JIMPITAN_TYPE_LABELS: Record<string, string> = {
+  HARIAN: 'Harian',
+  BULANAN: 'Bulanan',
+};
+
+// Family — Ronda Status
+export const RONDA_FAMILY_STATUS_OPTIONS = [
+  { value: 'AKTIF', label: 'Aktif Ronda' },
+  { value: 'KASEPUHAN', label: 'Kasepuhan (Dispensasi)' },
+  { value: 'BAYAR_IURAN', label: 'Bayar Iuran Ronda' },
+] as const;
+
+export const RONDA_FAMILY_STATUS_LABELS: Record<string, string> = {
+  AKTIF: 'Aktif Ronda',
+  KASEPUHAN: 'Kasepuhan',
+  BAYAR_IURAN: 'Bayar Iuran',
+};
+
+// CustomLevyItem — Status
+export const LEVY_ITEM_STATUS_LABELS: Record<string, string> = {
+  ACTIVE: 'Aktif',
+  COMPLETED: 'Lunas',
+};
 
 // Pengurus roles that see admin dashboard
 export const ADMIN_ROLES = [ROLES.KETUA_RT, ROLES.SEKRETARIS, ROLES.BENDAHARA, ROLES.PENGURUS];
@@ -266,7 +299,7 @@ export function formatDateShort(dateStr: string): string {
   const date = new Date(dateStr);
   return new Intl.DateTimeFormat('id-ID', {
     day: 'numeric',
-    month: 'short',
+    month: 'long',
     year: 'numeric',
   }).format(date);
 }

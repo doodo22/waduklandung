@@ -120,7 +120,7 @@ const EMPTY_MEMBER_FORM = {
   fullName: '',
   nik: '',
   gender: 'LAKI_LAKI' as const,
-  relationship: 'ANAK',
+  relationship: '',
   maritalStatus: '',
   birthPlace: '',
   birthDate: '',
@@ -227,7 +227,23 @@ export function ProfilPage({ userId, familyId, isAdmin }: ProfilPageProps) {
 
   const openAddMember = () => {
     setEditingMember(null);
-    setMemberForm(EMPTY_MEMBER_FORM);
+    // Smart default: if KK is male, suggest ISTRI as first member; if female, suggest SUAMI
+    const kk = members.find(m => m.isFamilyHead);
+    const hasSpouse = members.some(m => m.relationship === 'SUAMI' || m.relationship === 'ISTRI' || m.relationship === 'SUAMI_ISTRI');
+    const suggestedRelationship = hasSpouse
+      ? 'ANAK'
+      : kk?.gender === 'LAKI_LAKI'
+        ? 'ISTRI'
+        : 'SUAMI';
+    const suggestedGender = suggestedRelationship === 'ISTRI' ? 'PEREMPUAN' as const : 'LAKI_LAKI' as const;
+    const suggestedMarital = (suggestedRelationship === 'SUAMI' || suggestedRelationship === 'ISTRI') ? 'KAWIN' : '';
+
+    setMemberForm({
+      ...EMPTY_MEMBER_FORM,
+      relationship: suggestedRelationship,
+      gender: suggestedGender,
+      maritalStatus: suggestedMarital,
+    });
     setDialogOpen(true);
   };
 
@@ -346,12 +362,12 @@ export function ProfilPage({ userId, familyId, isAdmin }: ProfilPageProps) {
     return (
       <div className="space-y-4">
         {[1, 2, 3].map((i) => (
-          <Card key={i} className="rounded-xl shadow-sm border border-slate-200">
+          <Card key={i} className="rounded-2xl shadow-sm border border-orange-100 bg-white/80">
             <CardContent className="p-4">
               <div className="animate-pulse space-y-3">
-                <div className="h-5 bg-slate-200 rounded w-3/4" />
-                <div className="h-4 bg-slate-200 rounded w-1/2" />
-                <div className="h-4 bg-slate-200 rounded w-2/3" />
+                <div className="h-5 bg-orange-100 rounded w-3/4" />
+                <div className="h-4 bg-orange-100 rounded w-1/2" />
+                <div className="h-4 bg-orange-100 rounded w-2/3" />
               </div>
             </CardContent>
           </Card>
@@ -379,21 +395,21 @@ export function ProfilPage({ userId, familyId, isAdmin }: ProfilPageProps) {
   return (
     <div className="space-y-4">
       {/* ═══ 1. Profile Card ═══ */}
-      <Card className="rounded-xl shadow-sm border border-slate-200">
+      <Card className="rounded-2xl shadow-sm border border-teal-100 bg-gradient-to-br from-teal-50 to-emerald-50 overflow-hidden">
         <CardContent className="p-4">
           <div className="flex items-center gap-4">
-            <div className="w-14 h-14 rounded-full bg-slate-700 text-white flex items-center justify-center text-xl font-bold shrink-0">
+            <div className="w-14 h-14 rounded-full bg-teal-700 text-white flex items-center justify-center text-xl font-bold shrink-0 shadow-md">
               {user.name.charAt(0).toUpperCase()}
             </div>
             <div className="min-w-0 flex-1">
-              <h2 className="text-base font-semibold text-slate-800 truncate">
+              <h2 className="text-base font-bold text-stone-800 truncate">
                 {user.name}
               </h2>
-              <p className="text-sm text-slate-500">@{user.username}</p>
+              <p className="text-sm text-teal-700">@{user.username}</p>
               <div className="flex items-center gap-2 mt-1 flex-wrap">
                 <Badge
                   variant="secondary"
-                  className="text-xs bg-slate-100 text-slate-700"
+                  className="text-xs bg-teal-100 text-teal-800 font-semibold"
                 >
                   <Shield className="w-3 h-3 mr-1" />
                   {ROLE_LABELS[user.role] || user.role}
@@ -403,8 +419,8 @@ export function ProfilPage({ userId, familyId, isAdmin }: ProfilPageProps) {
           </div>
           {user.phone && (
             <div className="flex items-center gap-2 mt-3 ml-[4.25rem]">
-              <Phone className="w-3.5 h-3.5 text-slate-400" />
-              <span className="text-sm text-slate-600">{user.phone}</span>
+              <Phone className="w-3.5 h-3.5 text-teal-500" />
+              <span className="text-sm text-stone-600 font-medium">{user.phone}</span>
             </div>
           )}
         </CardContent>
@@ -412,11 +428,11 @@ export function ProfilPage({ userId, familyId, isAdmin }: ProfilPageProps) {
 
       {/* ═══ 2. Family Info Card ═══ */}
       {familyId && family ? (
-        <Card className="rounded-xl shadow-sm border border-slate-200">
+        <Card className="rounded-2xl shadow-sm border border-amber-100 bg-white/90 overflow-hidden">
           <CardHeader className="pb-2 pt-4 px-4">
             <div className="flex items-center gap-2">
-              <Home className="w-4 h-4 text-slate-600" />
-              <CardTitle className="text-sm font-semibold">
+              <Home className="w-4 h-4 text-amber-600" />
+              <CardTitle className="text-sm font-bold text-amber-800">
                 Informasi Keluarga
               </CardTitle>
             </div>
@@ -465,7 +481,7 @@ export function ProfilPage({ userId, familyId, isAdmin }: ProfilPageProps) {
           </CardContent>
         </Card>
       ) : (
-        <Card className="rounded-xl shadow-sm border border-amber-200 bg-amber-50/50">
+        <Card className="rounded-2xl shadow-sm border border-amber-200 bg-amber-50/50">
           <CardContent className="p-4">
             <div className="flex items-center gap-3">
               <AlertCircle className="w-5 h-5 text-amber-500 shrink-0" />
@@ -484,12 +500,12 @@ export function ProfilPage({ userId, familyId, isAdmin }: ProfilPageProps) {
 
       {/* ═══ 3. Family Members Section ═══ */}
       {familyId && (
-        <Card className="rounded-xl shadow-sm border border-slate-200">
+        <Card className="rounded-2xl shadow-sm border border-teal-100 bg-white/90 overflow-hidden">
           <CardHeader className="pb-2 pt-4 px-4">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
-                <Users className="w-4 h-4 text-slate-600" />
-                <CardTitle className="text-sm font-semibold">
+                <Users className="w-4 h-4 text-teal-600" />
+                <CardTitle className="text-sm font-bold text-teal-800">
                   Anggota Keluarga
                 </CardTitle>
               </div>
@@ -650,7 +666,7 @@ export function ProfilPage({ userId, familyId, isAdmin }: ProfilPageProps) {
             {/* Add Member Button */}
             <Button
               onClick={openAddMember}
-              className="w-full h-11 mt-3 bg-slate-800 hover:bg-slate-700 text-white rounded-lg"
+              className="w-full h-11 mt-3 bg-teal-700 hover:bg-teal-800 text-white rounded-xl font-semibold"
             >
               <Plus className="w-4 h-4 mr-2" />
               Tambah Anggota
@@ -660,11 +676,11 @@ export function ProfilPage({ userId, familyId, isAdmin }: ProfilPageProps) {
       )}
 
       {/* ═══ 4. Edit Profile (Phone) ═══ */}
-      <Card className="rounded-xl shadow-sm border border-slate-200">
+      <Card className="rounded-2xl shadow-sm border border-orange-100 bg-white/90 overflow-hidden">
         <CardHeader className="pb-2 pt-4 px-4">
           <div className="flex items-center gap-2">
-            <Phone className="w-4 h-4 text-slate-600" />
-            <CardTitle className="text-sm font-semibold">Edit Profil</CardTitle>
+            <Phone className="w-4 h-4 text-orange-600" />
+            <CardTitle className="text-sm font-bold text-orange-800">Edit Profil</CardTitle>
           </div>
         </CardHeader>
         <CardContent className="px-4 pb-4 space-y-4">
@@ -683,7 +699,7 @@ export function ProfilPage({ userId, familyId, isAdmin }: ProfilPageProps) {
           <Button
             onClick={handleSaveProfile}
             disabled={savingProfile}
-            className="w-full h-11 bg-slate-800 hover:bg-slate-700 text-white rounded-lg"
+            className="w-full h-11 bg-teal-700 hover:bg-teal-800 text-white rounded-xl font-semibold"
           >
             {savingProfile ? (
               <>
@@ -709,20 +725,17 @@ export function ProfilPage({ userId, familyId, isAdmin }: ProfilPageProps) {
 
       {/* ═══ 5. Logout Button ═══ */}
       <Button
-        variant="outline"
         onClick={clearAuth}
-        className="w-full h-11 border-red-200 text-red-600 hover:bg-red-50 hover:text-red-700 rounded-lg"
+        className="w-full h-12 bg-rose-600 hover:bg-rose-700 text-white rounded-xl font-bold text-base shadow-md"
       >
-        <LogOut className="w-4 h-4 mr-2" />
+        <LogOut className="w-5 h-5 mr-2" />
         Keluar
       </Button>
 
       {/* ═══ 6. App Version Footer ═══ */}
       <div className="text-center pt-2 pb-4">
-        <p className="text-xs text-slate-400">{APP_NAME} v1.0.0</p>
-        <p className="text-[11px] text-slate-300 mt-0.5">
-          Sistem Manajemen RT Digital
-        </p>
+        <p className="text-xs text-stone-400 font-medium">{APP_NAME} v1.0.0</p>
+
       </div>
 
       {/* ═══ Add/Edit Member Dialog ═══ */}
@@ -735,7 +748,7 @@ export function ProfilPage({ userId, familyId, isAdmin }: ProfilPageProps) {
             <DialogDescription className="text-sm text-slate-500">
               {editingMember
                 ? 'Perbarui data anggota keluarga di bawah ini.'
-                : 'Isi data anggota keluarga baru di bawah ini.'}
+                : `Kepala Keluarga sudah terdaftar. Tambahkan anggota ke-2 dan seterusnya.`}
             </DialogDescription>
           </DialogHeader>
 
@@ -942,7 +955,7 @@ export function ProfilPage({ userId, familyId, isAdmin }: ProfilPageProps) {
             <Button
               onClick={handleSaveMember}
               disabled={savingMember}
-              className="h-11 flex-1 bg-slate-800 hover:bg-slate-700 text-white rounded-lg"
+              className="h-11 flex-1 bg-teal-700 hover:bg-teal-800 text-white rounded-xl font-semibold"
             >
               {savingMember ? (
                 <>

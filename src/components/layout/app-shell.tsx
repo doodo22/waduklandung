@@ -77,7 +77,7 @@ function AppContent() {
     if (user && !isLoading) {
       if (isAdmin && currentPage === 'dashboard') return;
       if (!isAdmin && currentPage === 'beranda') return;
-      if (isAdmin && (currentPage === 'beranda' || currentPage === 'profil' || currentPage === 'ronda' || currentPage === 'iuran' || currentPage === 'selapanan')) {
+      if (isAdmin && (currentPage === 'beranda' || currentPage === 'profil' || currentPage === 'ronda' || currentPage === 'iuran')) {
         setPage('dashboard');
       }
       if (!isAdmin && (currentPage === 'dashboard' || currentPage === 'verifikasi' || currentPage === 'warga' || currentPage === 'ronda-jimpitan' || currentPage === 'keuangan' || currentPage === 'inventaris' || currentPage === 'pengumuman' || currentPage === 'surat' || currentPage === 'pengaturan' || currentPage === 'akun')) {
@@ -124,12 +124,13 @@ function AppContent() {
 
   // Warga layout - mobile-first with bottom nav
   return (
-    <div className="min-h-screen bg-slate-50 flex flex-col">
+    <div className="min-h-screen bg-gradient-to-b from-teal-50/80 to-orange-50/30 flex flex-col">
       <Header
         title={WARGA_NAV_ITEMS.find(i => i.id === currentPage)?.label || 'Beranda'}
         userName={user.name}
         userRole={user.role}
         compact
+        isWarga
       />
       <main className="flex-1 p-4 pb-20">
         {PageComponent ? (

@@ -1,54 +1,67 @@
 ---
 Task ID: 1
-Agent: Main
-Task: Data Warga feature — full KK & family member management
+Agent: Main Agent
+Task: Replace app logo with transparent version and update styling across all components
 
 Work Log:
-- Added `FamilyMember` model to Prisma schema with full demographic fields: fullName, nik, gender, relationship, maritalStatus, birthPlace, birthDate, education, citizenship, occupation, isFamilyHead
-- Removed `memberCount` from Family model (now computed from familyMembers count)
-- Renamed Family `members` relation to `users` (User[]) and added `familyMembers` (FamilyMember[])
-- Added `familyMember` optional 1:1 relation on User → FamilyMember
-- Added constant enums in constants.ts: GENDER_OPTIONS, RELATIONSHIP_OPTIONS, MARITAL_STATUS_OPTIONS, EDUCATION_OPTIONS, CITIZENSHIP_OPTIONS with label maps
-- Created `/api/family-members` route with GET/POST/PUT/DELETE — full CRUD with auth checks (admin=all, warga=own family only)
-- Updated `/api/families` route — GET now includes familyMembers + rondaGroup; POST auto-creates KK member; PUT syncs familyHead with KK member
-- Fixed ronda groups API — removed `memberCount` field (dropped column), uses simpler select
-- Fixed enrollment API — memberCount now from _count.familyMembers
-- Built admin WargaPage (1427 lines): two-panel layout, family list + detail, full member table with all demographics, add/edit/delete dialogs
-- Built mobile ProfilPage (1031 lines): profile card, family info, expandable member cards, add/edit member dialog, phone edit, logout
-- Seeded test data: 11 families with KK members, one family (Ahmad Dahlan) with 4 members including wife, child, and parent
+- Copied transparent logo from `/upload/waduk landung.png` to `/public/logo.png`
+- Updated login-page.tsx: Removed `rounded-2xl shadow-md`, added `object-contain`
+- Updated header.tsx (warga): Removed `rounded-lg`, added `object-contain`
+- Updated sidebar.tsx (admin): Removed `rounded-lg`, added `object-contain`
+- Updated beranda-page.tsx: Changed `rounded-xl shadow-md` to `object-contain drop-shadow-md`
 
 Stage Summary:
-- FamilyMember model fully operational with all demographic fields
-- Admin can manage all KK and member data from desktop dashboard
-- Warga can self-service enter/edit their family member data from mobile
-- Data syncs automatically (both admin and warga read from same API)
-- All APIs tested and working (families, family-members, ronda groups)
-- ESLint passes with 0 errors
+- Transparent logo (RGBA PNG, 516x483) now renders cleanly without background artifacts
+- All 4 logo locations updated to use `object-contain` instead of rounded corners/shadows
+- Logo displays properly on both light and dark backgrounds
+
 ---
-Task ID: 1
-Agent: main
-Task: Redesign Data Warga layout to expandable row table
+Task ID: 2
+Agent: Main Agent
+Task: Make 'Keluar' (Logout) button more highlighted/prominent on warga dashboard
 
 Work Log:
-- Read current warga-page.tsx (two-panel layout: left list + right detail)
-- Read Prisma schema (Family, FamilyMember models already support all needed fields)
-- Read families API and family-members API (both working correctly)
-- Identified the layout problem: two-panel design wastes space for 70+ KK
-- Redesigned warga-page.tsx with expandable row table pattern:
-  - Desktop: Single table where each row is a KK, clicking expands to show family members in sub-table
-  - Mobile: Collapsible card pattern - tap card to expand member details
-- Added stats summary bar (Total KK, Total Warga, KK Aktif, KK Nonaktif)
-- Used React.Fragment for proper table row grouping (avoiding DOM nesting issues)
-- Used shadcn/ui Collapsible component for mobile cards
-- Removed unused ScrollArea and simplified state management (expandedFamilyIds Set instead of single selectedFamilyId)
-- Pre-populated membersMap from included familyMembers data for faster display
-- Fixed invalid HTML (colSpan on span element → className col-span-2)
-- Lint: 0 errors, 1 warning (pre-existing font warning)
-- Verified: API returns 11 families with members, server running fine
+- Updated profil-page.tsx: Changed logout button from outline to filled `bg-rose-600 hover:bg-rose-700 text-white` with larger size (h-12), bold text, and shadow
+- Updated header.tsx (warga): Changed from tiny icon-only button to a labeled button with "Keluar" text, rose-colored border, and hover effect
 
 Stage Summary:
-- warga-page.tsx fully rewritten with expandable row table layout
-- Much more compact - all 70+ KK visible at a glance
-- Click any row → expands to show family members underneath
-- Stats summary shows KK/Warga counts at top
-- Mobile uses collapsible cards with same expand/collapse pattern
+- Logout button in profil page is now a prominent filled red button (h-12, bold)
+- Header logout button now shows both icon and "Keluar" text with rose accent color
+- Both buttons are more visible and easier to find for 35+ age demographic
+
+---
+Task ID: 3
+Agent: Main Agent
+Task: Backend: Modify jimpitan collection API to allow ronda group members to submit
+
+Work Log:
+- Modified POST handler in `/api/jimpitan/collection/route.ts`
+- Removed strict admin-only check (`isAdmin(authUser.role)`)
+- Added authorization logic: Admin OR member of the ronda group on duty for the given date
+- Checks if user's family belongs to the duty group by querying family's rondaGroupId
+- Returns clear error message when user is neither admin nor on duty
+
+Stage Summary:
+- API now supports dual authorization: admin OR ronda group member on duty
+- Warga users can only submit jimpitan for dates when their group is on duty
+- Error message clearly explains access restrictions
+
+---
+Task ID: 4
+Agent: Main Agent
+Task: Frontend: Add jimpitan collection form to warga ronda page when on duty
+
+Work Log:
+- Completely rewrote `/components/features/mobile/ronda-page.tsx`
+- Added CollectionData/CollectionEntry types and collection state management
+- Added `isOnDutyToday` computed property that checks if user's ronda group dayOfWeek matches today's duty
+- Added prominent "Anda Bertugas Hari Ini!" alert card with amber highlight when on duty
+- Added collapsible jimpitan collection form with "Tarik Jimpitan" button
+- Collection form includes: summary stats, per-family entries with quick select (0/500/1rb), custom amount input, notes, status badges, and "Simpan Semua" save button
+- Auto-fetches collection data when user is on duty
+
+Stage Summary:
+- Warga dashboard ronda page now shows duty alert when it's their turn
+- Jimpitan collection form allows on-duty ronda members to input payments
+- Form is mobile-optimized with card-based layout (not table-based like admin)
+- Same quick-select pattern (0, 500, 1rb) as admin for consistency

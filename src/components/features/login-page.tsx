@@ -8,11 +8,14 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { APP_NAME } from '@/lib/constants';
+import { Eye, EyeOff } from 'lucide-react';
+import Image from 'next/image';
 
 export function LoginPage() {
   const [isLogin, setIsLogin] = useState(true);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const { setAuth } = useAuthStore();
 
   const [form, setForm] = useState({
@@ -74,10 +77,17 @@ export function LoginPage() {
       <div className="w-full max-w-md">
         {/* Logo */}
         <div className="text-center mb-8">
-          <div className="w-14 h-14 rounded-xl bg-slate-800 text-white flex items-center justify-center mx-auto mb-4">
-            <span className="text-xl font-bold">RT</span>
+          <div className="w-20 h-20 mx-auto mb-4 relative">
+            <Image
+              src="/logo.png"
+              alt="Waduk Landung Logo"
+              width={80}
+              height={80}
+              className="object-contain"
+              priority
+            />
           </div>
-          <h1 className="text-2xl font-bold text-slate-800">{APP_NAME}</h1>
+          <h1 className="text-2xl font-bold text-slate-800 tracking-wide">WADUK LANDUNG</h1>
           <p className="text-sm text-slate-500 mt-1">Sistem Manajemen RT Digital</p>
         </div>
 
@@ -116,14 +126,29 @@ export function LoginPage() {
               </div>
               <div className="space-y-2">
                 <Label htmlFor="password">Password</Label>
-                <Input
-                  id="password"
-                  type="password"
-                  placeholder="Masukkan password"
-                  value={form.password}
-                  onChange={(e) => setForm({ ...form, password: e.target.value })}
-                  className="h-11"
-                />
+                <div className="relative">
+                  <Input
+                    id="password"
+                    type={showPassword ? 'text' : 'password'}
+                    placeholder="Masukkan password"
+                    value={form.password}
+                    onChange={(e) => setForm({ ...form, password: e.target.value })}
+                    className="h-11 pr-11"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 transition-colors"
+                    tabIndex={-1}
+                    aria-label={showPassword ? 'Sembunyikan password' : 'Tampilkan password'}
+                  >
+                    {showPassword ? (
+                      <EyeOff className="w-4.5 h-4.5" />
+                    ) : (
+                      <Eye className="w-4.5 h-4.5" />
+                    )}
+                  </button>
+                </div>
               </div>
               {!isLogin && (
                 <>
@@ -181,7 +206,7 @@ export function LoginPage() {
         </Card>
 
         <p className="text-xs text-slate-400 text-center mt-6">
-          © 2024 Management RT — Sistem Manajemen RT Digital
+          © 2026 Waduk Landung — Sistem Manajemen RT Digital
         </p>
       </div>
     </div>

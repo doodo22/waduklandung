@@ -11,6 +11,11 @@ import {
   EDUCATION_OPTIONS,
   EDUCATION_LABELS,
   CITIZENSHIP_OPTIONS,
+  JIMPITAN_TYPE_OPTIONS,
+  JIMPITAN_TYPE_LABELS,
+  RONDA_FAMILY_STATUS_OPTIONS,
+  RONDA_FAMILY_STATUS_LABELS,
+  formatCurrency,
 } from '@/lib/constants';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -102,6 +107,10 @@ interface Family {
   rondaGroupId: string | null;
   rondaGroup: RondaGroup | null;
   isActive: boolean;
+  jimpitanType: string;
+  jimpitanAmount: number;
+  rondaStatus: string;
+  rondaFee: number;
   familyMembers: FamilyMember[];
   users: { id: string; name: string; phone: string | null }[];
   createdAt: string;
@@ -126,13 +135,17 @@ interface FamilyFormData {
   familyHead: string;
   address: string;
   rondaGroupId: string;
+  jimpitanType: string;
+  jimpitanAmount: string;
+  rondaStatus: string;
+  rondaFee: string;
 }
 
 const EMPTY_MEMBER_FORM: MemberFormData = {
   fullName: '',
   nik: '',
   gender: 'LAKI_LAKI',
-  relationship: 'ANAK',
+  relationship: '',
   maritalStatus: '',
   birthPlace: '',
   birthDate: '',
@@ -146,6 +159,10 @@ const EMPTY_FAMILY_FORM: FamilyFormData = {
   familyHead: '',
   address: '',
   rondaGroupId: '',
+  jimpitanType: 'HARIAN',
+  jimpitanAmount: '1000',
+  rondaStatus: 'AKTIF',
+  rondaFee: '0',
 };
 
 // ============================================
@@ -158,7 +175,7 @@ function formatShortDate(dateStr: string | null): string {
   if (isNaN(date.getTime())) return '-';
   return new Intl.DateTimeFormat('id-ID', {
     day: 'numeric',
-    month: 'short',
+    month: 'long',
     year: 'numeric',
   }).format(date);
 }
@@ -167,6 +184,10 @@ function getRelationshipBadgeVariant(relationship: string): string {
   switch (relationship) {
     case 'KEPALA_KELUARGA':
       return 'bg-slate-800 text-white';
+    case 'SUAMI':
+      return 'bg-emerald-100 text-emerald-700';
+    case 'ISTRI':
+      return 'bg-pink-100 text-pink-700';
     case 'SUAMI_ISTRI':
       return 'bg-emerald-100 text-emerald-700';
     case 'ANAK':
@@ -343,6 +364,10 @@ export function WargaPage({ userId, familyId, isAdmin }: { userId: string; famil
       familyHead: family.familyHead,
       address: family.address,
       rondaGroupId: family.rondaGroupId ?? '',
+      jimpitanType: family.jimpitanType || 'HARIAN',
+      jimpitanAmount: String(family.jimpitanAmount || 1000),
+      rondaStatus: family.rondaStatus || 'AKTIF',
+      rondaFee: String(family.rondaFee || 0),
     });
     setShowFamilyDialog(true);
   };
@@ -360,6 +385,10 @@ export function WargaPage({ userId, familyId, isAdmin }: { userId: string; famil
           familyHead: familyForm.familyHead.trim(),
           address: familyForm.address.trim(),
           rondaGroupId: familyForm.rondaGroupId || null,
+          jimpitanType: familyForm.jimpitanType,
+          jimpitanAmount: parseInt(familyForm.jimpitanAmount) || 1000,
+          rondaStatus: familyForm.rondaStatus,
+          rondaFee: parseInt(familyForm.rondaFee) || 0,
         });
         if (res.ok) {
           toast.success('Data keluarga berhasil diperbarui');
@@ -836,6 +865,8 @@ export function WargaPage({ userId, familyId, isAdmin }: { userId: string; famil
                 <TableHead className="text-xs font-semibold min-w-[160px]">Kepala Keluarga</TableHead>
                 <TableHead className="text-xs font-semibold min-w-[180px]">Alamat</TableHead>
                 <TableHead className="text-xs font-semibold w-32 hidden lg:table-cell">Grup Ronda</TableHead>
+                <TableHead className="text-xs font-semibold w-28 hidden xl:table-cell">Jimpitan</TableHead>
+                <TableHead className="text-xs font-semibold w-28 hidden xl:table-cell">Ronda</TableHead>
                 <TableHead className="text-xs font-semibold w-16 text-center">Anggota</TableHead>
                 <TableHead className="text-xs font-semibold w-16 text-center">Status</TableHead>
                 {isAdmin && (
@@ -900,6 +931,38 @@ export function WargaPage({ userId, familyId, isAdmin }: { userId: string; famil
                           <span className="text-xs text-slate-300">-</span>
                         )}
                       </TableCell>
+                      <TableCell className="hidden xl:table-cell">
+                        <div className="flex flex-col gap-0.5">
+                          <Badge variant="secondary" className={`text-[9px] w-fit ${
+                            family.jimpitanType === 'HARIAN'
+                              ? 'bg-amber-50 text-amber-700'
+                              : 'bg-teal-50 text-teal-700'
+                          }`}>
+                            {JIMPITAN_TYPE_LABELS[family.jimpitanType] || family.jimpitanType}
+                          </Badge>
+                          <span className="text-[10px] text-slate-500">
+                            {family.jimpitanType === 'HARIAN' ? 'Rp.1.000/malam' : formatCurrency(family.jimpitanAmount)}
+                          </span>
+                        </div>
+                      </TableCell>
+                      <TableCell className="hidden xl:table-cell">
+                        <div className="flex flex-col gap-0.5">
+                          <Badge variant="secondary" className={`text-[9px] w-fit ${
+                            family.rondaStatus === 'AKTIF'
+                              ? 'bg-emerald-50 text-emerald-700'
+                              : family.rondaStatus === 'KASEPUHAN'
+                              ? 'bg-orange-50 text-orange-700'
+                              : 'bg-violet-50 text-violet-700'
+                          }`}>
+                            {RONDA_FAMILY_STATUS_LABELS[family.rondaStatus] || family.rondaStatus}
+                          </Badge>
+                          {family.rondaStatus === 'BAYAR_IURAN' && family.rondaFee > 0 && (
+                            <span className="text-[10px] text-slate-500">
+                              {formatCurrency(family.rondaFee)}
+                            </span>
+                          )}
+                        </div>
+                      </TableCell>
                       <TableCell className="text-center">
                         <Badge variant="secondary" className="text-[10px] bg-slate-100 text-slate-600">
                           {memberCount}
@@ -953,7 +1016,7 @@ export function WargaPage({ userId, familyId, isAdmin }: { userId: string; famil
                     {/* Expanded Members Row */}
                     {isExpanded && (
                       <TableRow className="bg-slate-50/30">
-                        <TableCell colSpan={isAdmin ? 8 : 7} className="p-0">
+                        <TableCell colSpan={isAdmin ? 10 : 9} className="p-0">
                           <div className="border-t border-slate-200">
                             <div className="flex items-center justify-between px-4 py-2 border-b border-slate-100">
                               <span className="text-xs font-semibold text-slate-600 flex items-center gap-1.5">
@@ -1082,6 +1145,22 @@ export function WargaPage({ userId, familyId, isAdmin }: { userId: string; famil
                               {rondaGroupName(family.rondaGroupId)}
                             </Badge>
                           )}
+                          <Badge variant="secondary" className={`text-[10px] ${
+                            family.jimpitanType === 'HARIAN'
+                              ? 'bg-amber-50 text-amber-700'
+                              : 'bg-teal-50 text-teal-700'
+                          }`}>
+                            {JIMPITAN_TYPE_LABELS[family.jimpitanType] || family.jimpitanType}
+                          </Badge>
+                          <Badge variant="secondary" className={`text-[10px] ${
+                            family.rondaStatus === 'AKTIF'
+                              ? 'bg-emerald-50 text-emerald-700'
+                              : family.rondaStatus === 'KASEPUHAN'
+                              ? 'bg-orange-50 text-orange-700'
+                              : 'bg-violet-50 text-violet-700'
+                          }`}>
+                            {RONDA_FAMILY_STATUS_LABELS[family.rondaStatus] || family.rondaStatus}
+                          </Badge>
                         </div>
                       </div>
                       {isExpanded ? (
@@ -1313,6 +1392,81 @@ export function WargaPage({ userId, familyId, isAdmin }: { userId: string; famil
                   ))}
                 </SelectContent>
               </Select>
+            </div>
+
+            {/* Jimpitan Section */}
+            <div className="border-t border-slate-100 pt-4">
+              <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">Jimpitan</p>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-2">
+                  <Label className="text-sm font-medium text-slate-700">Tipe Jimpitan</Label>
+                  <Select
+                    value={familyForm.jimpitanType}
+                    onValueChange={val => setFamilyForm({ ...familyForm, jimpitanType: val })}
+                  >
+                    <SelectTrigger className="h-10 rounded-lg border-slate-200">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {JIMPITAN_TYPE_OPTIONS.map(o => (
+                        <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-sm font-medium text-slate-700">Jumlah Jimpitan</Label>
+                  {familyForm.jimpitanType === 'HARIAN' ? (
+                    <Input
+                      value="Rp.1.000/malam"
+                      disabled
+                      className="h-10 rounded-lg border-slate-200 bg-slate-50 text-slate-500"
+                    />
+                  ) : (
+                    <Input
+                      type="number"
+                      placeholder="Contoh: 30000 atau 50000"
+                      value={familyForm.jimpitanAmount}
+                      onChange={e => setFamilyForm({ ...familyForm, jimpitanAmount: e.target.value })}
+                      className="h-10 rounded-lg border-slate-200"
+                    />
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* Ronda Section */}
+            <div className="border-t border-slate-100 pt-4">
+              <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">Status Ronda</p>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-2">
+                  <Label className="text-sm font-medium text-slate-700">Status Ronda</Label>
+                  <Select
+                    value={familyForm.rondaStatus}
+                    onValueChange={val => setFamilyForm({ ...familyForm, rondaStatus: val })}
+                  >
+                    <SelectTrigger className="h-10 rounded-lg border-slate-200">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {RONDA_FAMILY_STATUS_OPTIONS.map(o => (
+                        <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-sm font-medium text-slate-700">Iuran Ronda</Label>
+                  <Input
+                    type="number"
+                    placeholder="Rp.10.000"
+                    value={familyForm.rondaFee}
+                    onChange={e => setFamilyForm({ ...familyForm, rondaFee: e.target.value })}
+                    disabled={familyForm.rondaStatus !== 'BAYAR_IURAN'}
+                    className={`h-10 rounded-lg border-slate-200 ${familyForm.rondaStatus !== 'BAYAR_IURAN' ? 'bg-slate-50 text-slate-400' : ''}`}
+                  />
+                </div>
+              </div>
             </div>
           </div>
           <DialogFooter>

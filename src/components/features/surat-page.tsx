@@ -237,18 +237,27 @@ export function SuratPage({ userId, familyId, isAdmin }: SuratPageProps) {
             </p>
           </div>
         </div>
-        {!isAdmin && (
-          <Button
-            onClick={() => setAddDialogOpen(true)}
-            className="h-10 bg-slate-800 hover:bg-slate-700 text-white"
-          >
-            <Plus className="size-4 mr-1" />
-            Ajukan Surat
-          </Button>
-        )}
+        {/* Ajukan Surat button disabled - coming soon for warga */}
       </div>
 
-      {/* Filters */}
+      {/* Coming Soon Notice for Warga */}
+      {!isAdmin && (
+        <Card className="rounded-2xl shadow-sm border border-amber-200 bg-gradient-to-br from-amber-50 to-orange-50">
+          <CardContent className="py-10 flex flex-col items-center justify-center text-center">
+            <div className="w-14 h-14 rounded-full bg-amber-100 flex items-center justify-center mb-4">
+              <Clock className="size-6 text-amber-600" />
+            </div>
+            <p className="text-stone-800 font-bold text-lg">Fitur Segera Hadir</p>
+            <p className="text-sm text-stone-500 mt-2 max-w-sm">
+              Layanan pengajuan surat pengantar sedang dalam persiapan menunggu format resmi dari Pak RT. 
+              Nantikan informasi lebih lanjut!
+            </p>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Filters - Admin only */}
+      {isAdmin && (
       <div className="flex flex-col sm:flex-row gap-3">
         <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-slate-400" />
@@ -284,17 +293,18 @@ export function SuratPage({ userId, familyId, isAdmin }: SuratPageProps) {
           </SelectContent>
         </Select>
       </div>
+      )}
 
-      {/* Loading */}
-      {loading && (
+      {/* Loading - Admin only */}
+      {isAdmin && loading && (
         <div className="flex items-center justify-center py-20">
           <Loader2 className="size-6 animate-spin text-slate-400" />
           <span className="ml-2 text-sm text-slate-500">Memuat data...</span>
         </div>
       )}
 
-      {/* Empty State */}
-      {!loading && filteredLetters.length === 0 && (
+      {/* Empty State - Admin only */}
+      {isAdmin && !loading && filteredLetters.length === 0 && (
         <Card className="rounded-xl shadow-sm border border-slate-200">
           <CardContent className="py-16 flex flex-col items-center justify-center text-center">
             <div className="w-14 h-14 rounded-full bg-slate-100 flex items-center justify-center mb-4">
@@ -312,8 +322,8 @@ export function SuratPage({ userId, familyId, isAdmin }: SuratPageProps) {
         </Card>
       )}
 
-      {/* Letters List */}
-      {!loading && filteredLetters.length > 0 && (
+      {/* Letters List - Admin only */}
+      {isAdmin && !loading && filteredLetters.length > 0 && (
         <div className="space-y-3">
           {filteredLetters.map((letter) => (
             <Card

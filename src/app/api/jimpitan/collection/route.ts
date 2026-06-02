@@ -121,12 +121,11 @@ export async function GET(request: NextRequest) {
   }
 }
 
-// POST /api/jimpitan/collection — Batch save daily collection (Admin only)
+// POST /api/jimpitan/collection — Batch save daily collection (Admin or Ronda member on duty)
 export async function POST(request: NextRequest) {
   try {
     const authUser = await getAuthUser(request);
     if (!authUser) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    if (!isAdmin(authUser.role)) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
 
     const { date, entries } = await request.json();
 
@@ -139,14 +138,38 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Format tanggal harus YYYY-MM-DD' }, { status: 400 });
     }
 
-    // Get jimpitan amount from settings
-    const jimpitanAmount = await getJimpitanAmount();
-
-    // Determine groupId from day of week
+    // Determine which ronda group is on duty for this date
     const dayOfWeek = getDayOfWeekForDate(date);
-    const group = await db.rondaGroup.findFirst({
+    const dutyGroup = await db.rondaGroup.findFirst({
       where: { dayOfWeek, isActive: true },
     });
+
+    // Check authorization: Admin OR member of the ronda group on duty
+    const userIsAdmin = isAdmin(authUser.role);
+    let userIsOnDuty = false;
+
+    if (!userIsAdmin && authUser.familyId && dutyGroup) {
+      // Check if user's family belongs to the duty group
+      const familyInGroup = dutyGroup
+        ? await db.family.findFirst({
+            where: {
+              id: authUser.familyId,
+              rondaGroupId: dutyGroup.id,
+            },
+          })
+        : null;
+      userIsOnDuty = !!familyInGroup;
+    }
+
+    if (!userIsAdmin && !userIsOnDuty) {
+      return NextResponse.json(
+        { error: 'Anda tidak memiliki akses. Hanya admin atau anggota grup ronda yang bertugas pada tanggal tersebut yang dapat menginput jimpitan.' },
+        { status: 403 }
+      );
+    }
+
+    // Get jimpitan amount from settings
+    const jimpitanAmount = await getJimpitanAmount();
 
     // Find the current selapanan for this date
     const selapanan = await findSelapananForDate(date);
@@ -172,7 +195,7 @@ export async function POST(request: NextRequest) {
           expectedAmount,
           paidAmount,
           shortage,
-          groupId: group?.id ?? null,
+          groupId: dutyGroup?.id ?? null,
           selapananId: selapanan?.id ?? null,
           notes: notes ?? null,
           createdBy: authUser.id,
@@ -181,7 +204,7 @@ export async function POST(request: NextRequest) {
           expectedAmount,
           paidAmount,
           shortage,
-          groupId: group?.id ?? null,
+          groupId: dutyGroup?.id ?? null,
           selapananId: selapanan?.id ?? null,
           notes: notes ?? null,
           createdBy: authUser.id,
@@ -245,7 +268,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       message: `Berhasil menyimpan ${results.length} catatan jimpitan`,
       date,
-      groupId: group?.id ?? null,
+      groupId: dutyGroup?.id ?? null,
       selapananId: selapanan?.id ?? null,
       savedCount: results.length,
     });

@@ -52,7 +52,8 @@ export function PengaturanPage({ userId, familyId, isAdmin }: PengaturanPageProp
       const res = await api.get('/settings');
       if (res.ok) {
         const data = await res.json();
-        const items: SettingItem[] = data.settings || data || [];
+        // API returns { settings: <map>, raw: <array> } — use raw for array operations
+        const items: SettingItem[] = Array.isArray(data.raw) ? data.raw : Array.isArray(data.settings) ? data.settings : Array.isArray(data) ? data : [];
         setSettings(items);
         // Populate local state
         items.forEach((s: SettingItem) => {
@@ -251,7 +252,7 @@ export function PengaturanPage({ userId, familyId, isAdmin }: PengaturanPageProp
               <Clock className="w-4 h-4 text-slate-400 mt-0.5 shrink-0" />
               <div>
                 <p className="text-xs text-slate-500">Terakhir Diperbarui</p>
-                <p className="text-sm font-medium text-slate-700">Mei 2025</p>
+                <p className="text-sm font-medium text-slate-700">Juni 2026</p>
               </div>
             </div>
             <div className="flex items-start gap-2 py-1.5">
