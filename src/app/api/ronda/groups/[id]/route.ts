@@ -16,12 +16,13 @@ export async function GET(
       where: { id },
       include: {
         families: {
-          where: { isActive: true },
+          where: { isActive: true, rondaStatus: 'AKTIF' },
           select: {
             id: true,
             familyHead: true,
             address: true,
             rondaGroupId: true,
+            rondaStatus: true,
           },
           orderBy: { familyHead: 'asc' },
         },
@@ -66,12 +67,13 @@ export async function PUT(
       data,
       include: {
         families: {
-          where: { isActive: true },
+          where: { isActive: true, rondaStatus: 'AKTIF' },
           select: {
             id: true,
             familyHead: true,
             address: true,
             rondaGroupId: true,
+            rondaStatus: true,
           },
           orderBy: { familyHead: 'asc' },
         },
@@ -99,7 +101,7 @@ export async function DELETE(
     const group = await db.rondaGroup.findUnique({
       where: { id },
       include: {
-        families: { where: { isActive: true } },
+        families: { where: { isActive: true, rondaStatus: 'AKTIF' } },
       },
     });
 

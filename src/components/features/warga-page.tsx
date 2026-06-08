@@ -66,6 +66,7 @@ import {
   UserX,
   Hash,
   X,
+  AlertCircle,
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -1377,11 +1378,12 @@ export function WargaPage({ userId, familyId, isAdmin }: { userId: string; famil
             <div className="space-y-2">
               <Label className="text-sm font-medium text-slate-700">Grup Ronda</Label>
               <Select
-                value={familyForm.rondaGroupId}
-                onValueChange={val => setFamilyForm({ ...familyForm, rondaGroupId: val })}
+                value={familyForm.rondaStatus !== 'AKTIF' ? 'none' : familyForm.rondaGroupId}
+                onValueChange={val => setFamilyForm({ ...familyForm, rondaGroupId: val === 'none' ? '' : val })}
+                disabled={familyForm.rondaStatus !== 'AKTIF'}
               >
-                <SelectTrigger className="h-10 rounded-lg border-slate-200">
-                  <SelectValue placeholder="Pilih grup ronda" />
+                <SelectTrigger className={`h-10 rounded-lg border-slate-200 ${familyForm.rondaStatus !== 'AKTIF' ? 'bg-slate-50 text-slate-400' : ''}`}>
+                  <SelectValue placeholder={familyForm.rondaStatus !== 'AKTIF' ? 'Dispensasi (tidak ronda)' : 'Pilih grup ronda'} />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="none">Tanpa Grup</SelectItem>
@@ -1392,6 +1394,16 @@ export function WargaPage({ userId, familyId, isAdmin }: { userId: string; famil
                   ))}
                 </SelectContent>
               </Select>
+              {familyForm.rondaStatus === 'KASEPUHAN' && (
+                <p className="text-[11px] text-amber-600 font-medium flex items-center gap-1">
+                  <AlertCircle className="w-3 h-3" /> Kasepuhan mendapat dispensasi tidak ronda
+                </p>
+              )}
+              {familyForm.rondaStatus === 'BAYAR_IURAN' && (
+                <p className="text-[11px] text-violet-600 font-medium flex items-center gap-1">
+                  <AlertCircle className="w-3 h-3" /> Bayar iuran pengganti ronda
+                </p>
+              )}
             </div>
 
             {/* Jimpitan Section */}
@@ -1443,7 +1455,14 @@ export function WargaPage({ userId, familyId, isAdmin }: { userId: string; famil
                   <Label className="text-sm font-medium text-slate-700">Status Ronda</Label>
                   <Select
                     value={familyForm.rondaStatus}
-                    onValueChange={val => setFamilyForm({ ...familyForm, rondaStatus: val })}
+                    onValueChange={val => setFamilyForm({ 
+                      ...familyForm, 
+                      rondaStatus: val,
+                      // Auto-clear group when status is not AKTIF
+                      rondaGroupId: val !== 'AKTIF' ? '' : familyForm.rondaGroupId,
+                      // Auto-set rondaFee for BAYAR_IURAN
+                      rondaFee: val === 'BAYAR_IURAN' ? '5000' : '0',
+                    })}
                   >
                     <SelectTrigger className="h-10 rounded-lg border-slate-200">
                       <SelectValue />

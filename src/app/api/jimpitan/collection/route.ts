@@ -56,16 +56,34 @@ export async function GET(request: NextRequest) {
     // Get jimpitan amount from settings
     const jimpitanAmount = await getJimpitanAmount();
 
-    // Get all enrolled families
-    const enrolledFamilies = await db.family.findMany({
+    // Get HARIAN families with enrollment
+    const harianFamilies = await db.family.findMany({
       where: {
         isActive: true,
+        jimpitanType: 'HARIAN',
         jimpitanEnrollment: { isActive: true },
       },
       orderBy: { familyHead: 'asc' },
       select: {
         id: true,
         familyHead: true,
+        jimpitanType: true,
+        jimpitanAmount: true,
+      },
+    });
+
+    // Get BULANAN families (auto-included, no enrollment needed)
+    const bulananFamilies = await db.family.findMany({
+      where: {
+        isActive: true,
+        jimpitanType: 'BULANAN',
+      },
+      orderBy: { familyHead: 'asc' },
+      select: {
+        id: true,
+        familyHead: true,
+        jimpitanType: true,
+        jimpitanAmount: true,
       },
     });
 
@@ -80,12 +98,14 @@ export async function GET(request: NextRequest) {
     // Build a map of existing logs by familyId
     const logMap = new Map(existingLogs.map((log) => [log.familyId, log]));
 
-    // Build entries for all enrolled families
-    const entries = enrolledFamilies.map((family) => {
+    // Build entries for HARIAN families (normal collection)
+    const harianEntries = harianFamilies.map((family) => {
       const existingLog = logMap.get(family.id);
       return {
         familyId: family.id,
         familyHead: family.familyHead,
+        jimpitanType: 'HARIAN' as const,
+        monthlyAmount: 0,
         expectedAmount: jimpitanAmount,
         paidAmount: existingLog?.paidAmount ?? 0,
         shortage: existingLog?.shortage ?? jimpitanAmount,
@@ -94,10 +114,29 @@ export async function GET(request: NextRequest) {
       };
     });
 
-    // Calculate totals
-    const totalExpected = entries.reduce((sum, e) => sum + e.expectedAmount, 0);
-    const totalPaid = entries.reduce((sum, e) => sum + e.paidAmount, 0);
-    const totalShortage = entries.reduce((sum, e) => sum + e.shortage, 0);
+    // Build entries for BULANAN families (disabled, informational only)
+    const bulananEntries = bulananFamilies.map((family) => {
+      const existingLog = logMap.get(family.id);
+      return {
+        familyId: family.id,
+        familyHead: family.familyHead,
+        jimpitanType: 'BULANAN' as const,
+        monthlyAmount: family.jimpitanAmount,
+        expectedAmount: 0, // Not part of daily collection
+        paidAmount: 0,
+        shortage: 0,
+        notes: existingLog?.notes ?? null,
+        logId: existingLog?.id ?? null,
+      };
+    });
+
+    // Combine: HARIAN first, then BULANAN
+    const entries = [...harianEntries, ...bulananEntries];
+
+    // Calculate totals (only from HARIAN entries)
+    const totalExpected = harianEntries.reduce((sum, e) => sum + e.expectedAmount, 0);
+    const totalPaid = harianEntries.reduce((sum, e) => sum + e.paidAmount, 0);
+    const totalShortage = harianEntries.reduce((sum, e) => sum + e.shortage, 0);
 
     return NextResponse.json({
       date,
@@ -109,7 +148,8 @@ export async function GET(request: NextRequest) {
       jimpitanAmount,
       entries,
       summary: {
-        totalFamilies: entries.length,
+        totalFamilies: harianEntries.length,
+        totalBulanan: bulananEntries.length,
         totalExpected,
         totalPaid,
         totalShortage,
@@ -174,13 +214,23 @@ export async function POST(request: NextRequest) {
     // Find the current selapanan for this date
     const selapanan = await findSelapananForDate(date);
 
-    // Process each entry with upsert
+    // Get BULANAN family IDs to skip
+    const bulananFamilies = await db.family.findMany({
+      where: { jimpitanType: 'BULANAN', isActive: true },
+      select: { id: true },
+    });
+    const bulananIds = new Set(bulananFamilies.map(f => f.id));
+
+    // Process each entry with upsert (skip BULANAN families)
     const results = [];
 
     for (const entry of entries) {
       const { familyId, paidAmount, notes } = entry;
 
       if (!familyId || paidAmount === undefined) continue;
+
+      // Skip BULANAN families — they are not part of daily collection
+      if (bulananIds.has(familyId)) continue;
 
       const expectedAmount = jimpitanAmount;
       const shortage = Math.max(0, expectedAmount - paidAmount);

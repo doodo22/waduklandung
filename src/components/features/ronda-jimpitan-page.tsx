@@ -64,6 +64,7 @@ interface RondaGroupFamily {
   memberCount?: number;
   _count?: { familyMembers: number };
   rondaGroupId: string;
+  rondaStatus?: string;
 }
 
 interface RondaGroup {
@@ -88,6 +89,8 @@ interface EnrollmentFamily {
 interface CollectionEntry {
   familyId: string;
   familyHead: string;
+  jimpitanType: 'HARIAN' | 'BULANAN';
+  monthlyAmount: number;
   expectedAmount: number;
   paidAmount: number;
   shortage: number;
@@ -102,6 +105,7 @@ interface CollectionData {
   entries: CollectionEntry[];
   summary: {
     totalFamilies: number;
+    totalBulanan: number;
     totalExpected: number;
     totalPaid: number;
     totalShortage: number;
@@ -201,7 +205,7 @@ export function RondaJimpitanPage({ userId, familyId, isAdmin }: RondaJimpitanPa
   // Data Fetching
   // ----------------------------------------
 
-  const fetchGroups = useCallback(async () => {
+  const fetchGroups = useCallback(async (): Promise<RondaGroup[]> => {
     setLoadingGroups(true);
     try {
       const res = await api.get('/ronda/groups');
@@ -218,12 +222,14 @@ export function RondaJimpitanPage({ userId, familyId, isAdmin }: RondaJimpitanPa
             .filter((f: { isActive?: boolean }) => f.isActive !== false);
           setAllFamilies(famList);
         }
+        return groupList;
       }
     } catch {
       // silent
     } finally {
       setLoadingGroups(false);
     }
+    return [];
   }, []);
 
   const fetchEnrollment = useCallback(async () => {
@@ -295,7 +301,11 @@ export function RondaJimpitanPage({ userId, familyId, isAdmin }: RondaJimpitanPa
   const unassignedFamilies = useMemo(() => {
     const assignedIds = new Set<string>();
     groups.forEach(g => g.families.forEach(f => assignedIds.add(f.id)));
-    return allFamilies.filter(f => !assignedIds.has(f.id));
+    // Only show AKTIF ronda families that are not yet assigned to any group
+    return allFamilies.filter(f =>
+      !assignedIds.has(f.id) &&
+      (f.rondaStatus === 'AKTIF' || !f.rondaStatus) // Only AKTIF can join ronda groups
+    );
   }, [allFamilies, groups]);
 
   const handleAddFamilyToGroup = async () => {
@@ -306,9 +316,9 @@ export function RondaJimpitanPage({ userId, familyId, isAdmin }: RondaJimpitanPa
       if (res.ok) {
         toast.success('Anggota berhasil ditambahkan');
         setAddFamilyId('');
-        await fetchGroups();
-        // Update manageGroup from refreshed data
-        const updatedGroup = groups.find(g => g.id === manageGroup.id);
+        const freshGroups = await fetchGroups();
+        // Update manageGroup from freshly fetched data
+        const updatedGroup = freshGroups.find(g => g.id === manageGroup.id);
         if (updatedGroup) setManageGroup(updatedGroup);
       } else {
         toast.error('Gagal menambahkan anggota');
@@ -336,7 +346,12 @@ export function RondaJimpitanPage({ userId, familyId, isAdmin }: RondaJimpitanPa
         setShowMoveDialog(false);
         setMovingFamily(null);
         setTargetGroupId('');
-        await fetchGroups();
+        const freshGroups = await fetchGroups();
+        // Update manageGroup from freshly fetched data
+        if (manageGroup) {
+          const updatedGroup = freshGroups.find(g => g.id === manageGroup.id);
+          if (updatedGroup) setManageGroup(updatedGroup);
+        }
       } else {
         toast.error('Gagal memindahkan anggota');
       }
@@ -351,17 +366,13 @@ export function RondaJimpitanPage({ userId, familyId, isAdmin }: RondaJimpitanPa
     if (!manageGroup) return;
     setSavingGroup(true);
     try {
-      // To remove from group, we assign to a special "null" group
-      // We'll use a different approach: set rondaGroupId to null
-      // The API expects familyId + groupId; we need an endpoint to unassign
-      // Let's post with groupId as empty string as a convention
-      // Actually, let's check if there's a direct way...
-      // Since the API only supports assignment, we'll need to handle removal differently
-      // For now, we can POST to a special endpoint or use PUT /families
       const res = await api.put('/families', { id: familyId, rondaGroupId: null });
       if (res.ok) {
         toast.success('Anggota berhasil dihapus dari grup');
-        await fetchGroups();
+        const freshGroups = await fetchGroups();
+        // Update manageGroup from freshly fetched data
+        const updatedGroup = freshGroups.find(g => g.id === manageGroup.id);
+        if (updatedGroup) setManageGroup(updatedGroup);
       } else {
         toast.error('Gagal menghapus anggota dari grup');
       }
@@ -443,18 +454,21 @@ export function RondaJimpitanPage({ userId, familyId, isAdmin }: RondaJimpitanPa
   };
 
   const computedSummary = useMemo(() => {
-    if (!collectionData) return { totalFamilies: 0, totalPaid: 0, totalShortage: 0 };
+    if (!collectionData) return { totalFamilies: 0, totalBulanan: 0, totalPaid: 0, totalShortage: 0 };
     const entries = collectionData.entries;
+    const harianEntries = entries.filter(e => e.jimpitanType !== 'BULANAN');
+    const bulananEntries = entries.filter(e => e.jimpitanType === 'BULANAN');
     let totalPaid = 0;
     let totalShortage = 0;
-    for (const entry of entries) {
+    for (const entry of harianEntries) {
       const paid = getEntryPaidAmount(entry);
       const shortage = Math.max(0, entry.expectedAmount - paid);
       totalPaid += paid;
       totalShortage += shortage;
     }
     return {
-      totalFamilies: entries.length,
+      totalFamilies: harianEntries.length,
+      totalBulanan: bulananEntries.length,
       totalPaid,
       totalShortage,
     };
@@ -464,14 +478,17 @@ export function RondaJimpitanPage({ userId, familyId, isAdmin }: RondaJimpitanPa
     if (!collectionData) return;
     setSavingCollection(true);
     try {
-      const entries = collectionData.entries.map(entry => {
-        const edited = editedEntries.get(entry.familyId);
-        return {
-          familyId: entry.familyId,
-          paidAmount: edited?.paidAmount ?? entry.paidAmount,
-          notes: edited?.notes ?? entry.notes ?? null,
-        };
-      });
+      // Only save HARIAN entries (skip BULANAN — they pay monthly)
+      const entries = collectionData.entries
+        .filter(entry => entry.jimpitanType !== 'BULANAN')
+        .map(entry => {
+          const edited = editedEntries.get(entry.familyId);
+          return {
+            familyId: entry.familyId,
+            paidAmount: edited?.paidAmount ?? entry.paidAmount,
+            notes: edited?.notes ?? entry.notes ?? null,
+          };
+        });
 
       const res = await api.post('/jimpitan/collection', {
         date: collectionDate,
@@ -825,7 +842,7 @@ export function RondaJimpitanPage({ userId, familyId, isAdmin }: RondaJimpitanPa
 
           {/* Summary Cards */}
           {collectionData && (
-            <div className="grid grid-cols-3 gap-3">
+            <div className={`grid gap-3 ${computedSummary.totalBulanan > 0 ? 'grid-cols-4' : 'grid-cols-3'}`}>
               <Card className="rounded-xl shadow-sm border">
                 <CardContent className="p-3 sm:p-4">
                   <div className="flex items-center gap-2">
@@ -833,7 +850,7 @@ export function RondaJimpitanPage({ userId, familyId, isAdmin }: RondaJimpitanPa
                       <Users className="w-4 h-4 text-slate-600" />
                     </div>
                     <div className="min-w-0">
-                      <p className="text-xs text-slate-500">Total KK</p>
+                      <p className="text-xs text-slate-500">KK Harian</p>
                       <p className="text-lg font-bold text-slate-800">
                         {computedSummary.totalFamilies}
                       </p>
@@ -841,6 +858,23 @@ export function RondaJimpitanPage({ userId, familyId, isAdmin }: RondaJimpitanPa
                   </div>
                 </CardContent>
               </Card>
+              {computedSummary.totalBulanan > 0 && (
+                <Card className="rounded-xl shadow-sm border">
+                  <CardContent className="p-3 sm:p-4">
+                    <div className="flex items-center gap-2">
+                      <div className="w-8 h-8 rounded-lg bg-purple-50 flex items-center justify-center shrink-0">
+                        <Calendar className="w-4 h-4 text-purple-600" />
+                      </div>
+                      <div className="min-w-0">
+                        <p className="text-xs text-slate-500">KK Bulanan</p>
+                        <p className="text-lg font-bold text-purple-700">
+                          {computedSummary.totalBulanan}
+                        </p>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
               <Card className="rounded-xl shadow-sm border">
                 <CardContent className="p-3 sm:p-4">
                   <div className="flex items-center gap-2">
@@ -902,10 +936,42 @@ export function RondaJimpitanPage({ userId, familyId, isAdmin }: RondaJimpitanPa
                     </TableHeader>
                     <TableBody>
                       {collectionData.entries.map((entry, idx) => {
+                        const isBulanan = entry.jimpitanType === 'BULANAN';
                         const paid = getEntryPaidAmount(entry);
                         const notes = getEntryNotes(entry);
                         const expected = entry.expectedAmount;
 
+                        // BULANAN row: disabled, informational only
+                        if (isBulanan) {
+                          return (
+                            <TableRow key={entry.familyId} className="bg-purple-50/40">
+                              <TableCell className="text-sm text-slate-400">{idx + 1}</TableCell>
+                              <TableCell className="text-sm font-medium text-slate-500">
+                                {entry.familyHead}
+                              </TableCell>
+                              <TableCell>
+                                <div className="flex items-center gap-2">
+                                  <Badge className="bg-purple-100 text-purple-700 hover:bg-purple-100 text-xs">
+                                    Bulanan
+                                  </Badge>
+                                  <span className="text-xs text-purple-600 font-medium">
+                                    {formatCurrency(entry.monthlyAmount)}/bln
+                                  </span>
+                                </div>
+                              </TableCell>
+                              <TableCell className="text-center">
+                                <Badge className="bg-slate-100 text-slate-500 hover:bg-slate-100 text-xs">
+                                  Nonaktif
+                                </Badge>
+                              </TableCell>
+                              <TableCell>
+                                <span className="text-xs text-slate-400 italic">Iuran bulanan</span>
+                              </TableCell>
+                            </TableRow>
+                          );
+                        }
+
+                        // HARIAN row: normal interactive
                         return (
                           <TableRow key={entry.familyId}>
                             <TableCell className="text-sm text-slate-500">{idx + 1}</TableCell>

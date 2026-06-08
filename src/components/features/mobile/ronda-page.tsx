@@ -105,6 +105,8 @@ interface RondaGroup {
 interface CollectionEntry {
   familyId: string;
   familyHead: string;
+  jimpitanType: 'HARIAN' | 'BULANAN';
+  monthlyAmount: number;
   expectedAmount: number;
   paidAmount: number;
   shortage: number;
@@ -119,6 +121,7 @@ interface CollectionData {
   entries: CollectionEntry[];
   summary: {
     totalFamilies: number;
+    totalBulanan: number;
     totalExpected: number;
     totalPaid: number;
     totalShortage: number;
@@ -347,27 +350,32 @@ export function RondaPage({ userId, familyId, isAdmin }: RondaWargaPageProps) {
   };
 
   const computedSummary = useMemo(() => {
-    if (!collectionData) return { totalFamilies: 0, totalPaid: 0, totalShortage: 0 };
+    if (!collectionData) return { totalFamilies: 0, totalBulanan: 0, totalPaid: 0, totalShortage: 0 };
     const entries = collectionData.entries;
+    const harianEntries = entries.filter(e => e.jimpitanType !== 'BULANAN');
+    const bulananEntries = entries.filter(e => e.jimpitanType === 'BULANAN');
     let totalPaid = 0;
     let totalShortage = 0;
-    for (const entry of entries) {
+    for (const entry of harianEntries) {
       const paid = editedEntries.get(entry.familyId) ?? entry.paidAmount;
       const shortage = Math.max(0, entry.expectedAmount - paid);
       totalPaid += paid;
       totalShortage += shortage;
     }
-    return { totalFamilies: entries.length, totalPaid, totalShortage };
+    return { totalFamilies: harianEntries.length, totalBulanan: bulananEntries.length, totalPaid, totalShortage };
   }, [collectionData, editedEntries]);
 
   const handleSaveCollection = async () => {
     if (!collectionData) return;
     setSavingCollection(true);
     try {
-      const entries = collectionData.entries.map(entry => ({
-        familyId: entry.familyId,
-        paidAmount: editedEntries.get(entry.familyId) ?? entry.paidAmount,
-      }));
+      // Only save HARIAN entries (skip BULANAN — they pay monthly)
+      const entries = collectionData.entries
+        .filter(entry => entry.jimpitanType !== 'BULANAN')
+        .map(entry => ({
+          familyId: entry.familyId,
+          paidAmount: editedEntries.get(entry.familyId) ?? entry.paidAmount,
+        }));
 
       const res = await api.post('/jimpitan/collection', { date: today, entries });
       if (res.ok) {
@@ -424,11 +432,11 @@ export function RondaPage({ userId, familyId, isAdmin }: RondaWargaPageProps) {
 
   if (!attendanceData?.hasGroup || !attendanceData?.group) {
     return (
-      <Card className="rounded-2xl shadow-sm border border-orange-100 bg-white/80">
+      <Card className="rounded-2xl shadow-sm border border-teal-100 bg-gradient-to-br from-teal-50 to-emerald-50 overflow-hidden">
         <CardContent className="p-8 text-center">
-          <Shield className="w-10 h-10 text-orange-200 mx-auto mb-3" />
-          <p className="text-sm font-semibold text-stone-700">Keluarga Anda belum terdaftar di grup ronda</p>
-          <p className="text-xs text-stone-500 mt-1">Hubungi pengurus RT untuk penempatan grup</p>
+          <Shield className="w-10 h-10 text-teal-300 mx-auto mb-3" />
+          <p className="text-sm font-semibold text-stone-700">Anda tidak terdaftar di grup ronda</p>
+          <p className="text-xs text-stone-500 mt-1">Jika Anda berstatus Kasepuhan, Anda mendapat dispensasi tidak ikut ronda</p>
         </CardContent>
       </Card>
     );
@@ -504,11 +512,17 @@ export function RondaPage({ userId, familyId, isAdmin }: RondaWargaPageProps) {
               </div>
             ) : (
               <div className="space-y-3">
-                <div className="grid grid-cols-3 gap-2">
+                <div className={`grid gap-2 ${computedSummary.totalBulanan > 0 ? 'grid-cols-4' : 'grid-cols-3'}`}>
                   <div className="text-center p-2 bg-slate-50 rounded-lg border border-slate-100">
                     <p className="text-lg font-bold text-slate-800">{computedSummary.totalFamilies}</p>
-                    <p className="text-[10px] text-slate-500 font-semibold">KK</p>
+                    <p className="text-[10px] text-slate-500 font-semibold">Harian</p>
                   </div>
+                  {computedSummary.totalBulanan > 0 && (
+                    <div className="text-center p-2 bg-purple-50 rounded-lg border border-purple-100">
+                      <p className="text-lg font-bold text-purple-700">{computedSummary.totalBulanan}</p>
+                      <p className="text-[10px] text-purple-600 font-semibold">Bulanan</p>
+                    </div>
+                  )}
                   <div className="text-center p-2 bg-emerald-50 rounded-lg border border-emerald-100">
                     <p className="text-sm font-bold text-emerald-700">{formatCurrency(computedSummary.totalPaid)}</p>
                     <p className="text-[10px] text-emerald-600 font-semibold">Terkumpul</p>
@@ -530,8 +544,37 @@ export function RondaPage({ userId, familyId, isAdmin }: RondaWargaPageProps) {
                     </thead>
                     <tbody>
                       {collectionData.entries.map((entry, idx) => {
+                        const isBulanan = entry.jimpitanType === 'BULANAN';
                         const paid = getEntryPaidAmount(entry);
                         const expected = entry.expectedAmount;
+
+                        // BULANAN row: disabled, informational only
+                        if (isBulanan) {
+                          return (
+                            <tr key={entry.familyId} className="bg-purple-50/40">
+                              <td className="px-3 py-2.5">
+                                <span className="text-sm font-medium text-slate-500">{entry.familyHead}</span>
+                              </td>
+                              <td className="px-2 py-2 text-center">
+                                <div className="flex items-center justify-center gap-1">
+                                  <Badge className="bg-purple-100 text-purple-700 hover:bg-purple-100 text-[10px]">
+                                    Bulanan
+                                  </Badge>
+                                  <span className="text-[10px] text-purple-600 font-medium">
+                                    {formatCurrency(entry.monthlyAmount)}/bln
+                                  </span>
+                                </div>
+                              </td>
+                              <td className="px-2 py-2 text-center">
+                                <Badge className="bg-slate-100 text-slate-500 hover:bg-slate-100 text-[10px]">
+                                  Nonaktif
+                                </Badge>
+                              </td>
+                            </tr>
+                          );
+                        }
+
+                        // HARIAN row: normal interactive
                         return (
                           <tr key={entry.familyId} className={idx % 2 === 0 ? 'bg-white' : 'bg-slate-50/50'}>
                             <td className="px-3 py-2.5">

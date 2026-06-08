@@ -110,12 +110,26 @@ export async function PUT(request: NextRequest) {
     const data: Record<string, unknown> = {};
     if (familyHead !== undefined) data.familyHead = familyHead;
     if (address !== undefined) data.address = address;
-    if (rondaGroupId !== undefined) data.rondaGroupId = rondaGroupId || null;
     if (isActive !== undefined) data.isActive = isActive;
     if (jimpitanType !== undefined) data.jimpitanType = jimpitanType;
     if (jimpitanAmount !== undefined) data.jimpitanAmount = jimpitanAmount;
-    if (rondaStatus !== undefined) data.rondaStatus = rondaStatus;
+    if (rondaStatus !== undefined) {
+      data.rondaStatus = rondaStatus;
+      // Auto-remove from ronda group when status is not AKTIF (dispensasi)
+      if (rondaStatus !== 'AKTIF') {
+        data.rondaGroupId = null;
+      }
+    }
     if (rondaFee !== undefined) data.rondaFee = rondaFee;
+    // Only allow rondaGroupId for AKTIF families
+    if (rondaGroupId !== undefined) {
+      const finalStatus = data.rondaStatus as string | undefined;
+      if (finalStatus && finalStatus !== 'AKTIF') {
+        // Ignore group assignment for non-AKTIF (dispensasi)
+      } else {
+        data.rondaGroupId = rondaGroupId || null;
+      }
+    }
 
     // If familyHead name changes, also update the KK member's fullName
     if (familyHead) {

@@ -71,6 +71,8 @@ import {
   BookOpen,
   CircleDollarSign,
   ArrowLeft,
+  Eye,
+  TrendingUp,
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -186,6 +188,24 @@ export function SelapananPage({ userId, familyId, isAdmin }: Props) {
   const [collectInputs, setCollectInputs] = useState<Record<string, string>>({});
   const [submittingKey, setSubmittingKey] = useState<string | null>(null);
   const [sessionCollected, setSessionCollected] = useState(0);
+
+  // Daily matrix state
+  const [showDailyMatrix, setShowDailyMatrix] = useState(false);
+  const [dailyMatrixData, setDailyMatrixData] = useState<{
+    selapanan: { id: string; number: number; periodeStart: string; periodeEnd: string; meetingDate: string; status: string };
+    jimpitanAmount: number;
+    dailyColumns: { date: string; dayOfWeek: number; dayName: string; nightLabel: string; weekNumber: number; dayInWeek: number; groupName: string | null; groupId: string | null }[];
+    familyRows: {
+      familyId: string;
+      familyHead: string;
+      rondaGroup: { id: string; name: string; dayOfWeek: number } | null;
+      dailyData: Record<string, { paidAmount: number; shortage: number; expectedAmount: number; groupName: string | null }>;
+      summary: { totalExpected: number; totalPaid: number; totalShortage: number; daysPaid: number; daysPartial: number; daysMissed: number; paymentRate: number };
+    }[];
+    overallSummary: { totalFamilies: number; totalDays: number; totalExpected: number; totalPaid: number; totalShortage: number; daysCollected: number; avgPaymentRate: number };
+  } | null>(null);
+  const [loadingDailyMatrix, setLoadingDailyMatrix] = useState(false);
+  const [dailyMatrixWeek, setDailyMatrixWeek] = useState<number>(0); // 0 = all weeks
 
   // ----------------------------------------
   // Data Fetching
@@ -451,6 +471,348 @@ export function SelapananPage({ userId, familyId, isAdmin }: Props) {
   };
 
   // ----------------------------------------
+  // Daily Matrix
+  // ----------------------------------------
+
+  const fetchDailyMatrix = useCallback(async (selapananId: string) => {
+    setLoadingDailyMatrix(true);
+    try {
+      const res = await api.get(`/jimpitan/selapanan-daily?selapananId=${selapananId}`);
+      if (res.ok) {
+        const data = await res.json();
+        setDailyMatrixData(data);
+        setShowDailyMatrix(true);
+        setDailyMatrixWeek(0);
+      } else {
+        toast.error('Gagal memuat data rekap harian');
+      }
+    } catch {
+      toast.error('Terjadi kesalahan');
+    } finally {
+      setLoadingDailyMatrix(false);
+    }
+  }, []);
+
+  const exitDailyMatrix = () => {
+    setShowDailyMatrix(false);
+    setDailyMatrixData(null);
+    setDailyMatrixWeek(0);
+  };
+
+  // ----------------------------------------
+  // Render: Daily Matrix View (35-day × families)
+  // ----------------------------------------
+
+  const renderDailyMatrix = () => {
+    if (!dailyMatrixData) return null;
+
+    const { selapanan, jimpitanAmount, dailyColumns, familyRows, overallSummary } = dailyMatrixData;
+    const today = new Date().toISOString().split('T')[0];
+
+    // Group columns by week
+    const weeks: Record<number, typeof dailyColumns> = {};
+    for (const col of dailyColumns) {
+      if (!weeks[col.weekNumber]) weeks[col.weekNumber] = [];
+      weeks[col.weekNumber].push(col);
+    }
+
+    // Filter by selected week
+    const displayWeeks = dailyMatrixWeek === 0 ? weeks : { [dailyMatrixWeek]: weeks[dailyMatrixWeek] || [] };
+
+    return (
+      <div className="space-y-4">
+        {/* Header */}
+        <div className="rounded-xl border bg-slate-800 text-white p-4 shadow-sm">
+          <div className="flex items-center justify-between">
+            <div>
+              <div className="flex items-center gap-2 mb-1">
+                <Badge className="bg-amber-400 text-slate-900 text-[10px] font-bold">REKAP HARIAN</Badge>
+                <span className="text-slate-300 text-sm">Selapanan Ke-{selapanan.number}</span>
+              </div>
+              <h3 className="text-base font-bold">Kurangan Jimpitan 35 Hari</h3>
+              <p className="text-xs text-slate-400 mt-0.5">
+                Periode: {formatDateShort(selapanan.periodeStart)} — {formatDateShort(selapanan.periodeEnd)}
+              </p>
+            </div>
+            <div className="text-right">
+              <p className="text-xs text-slate-400">Besaran/Hari</p>
+              <p className="text-xl font-bold text-emerald-400">{formatCurrency(jimpitanAmount)}</p>
+            </div>
+          </div>
+        </div>
+
+        {/* Summary Cards */}
+        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3">
+          <div className="rounded-lg border bg-white p-3 shadow-sm">
+            <p className="text-[10px] text-slate-500 font-medium uppercase">KK Harian</p>
+            <p className="text-lg font-bold text-slate-800">{overallSummary.totalFamilies}</p>
+          </div>
+          <div className="rounded-lg border bg-white p-3 shadow-sm">
+            <p className="text-[10px] text-slate-500 font-medium uppercase">Hari Terinput</p>
+            <p className="text-lg font-bold text-slate-800">{overallSummary.daysCollected}/35</p>
+          </div>
+          <div className="rounded-lg border bg-white p-3 shadow-sm">
+            <p className="text-[10px] text-emerald-600 font-medium uppercase">Total Terkumpul</p>
+            <p className="text-lg font-bold text-emerald-700">{formatCurrency(overallSummary.totalPaid)}</p>
+          </div>
+          <div className="rounded-lg border bg-white p-3 shadow-sm">
+            <p className="text-[10px] text-red-600 font-medium uppercase">Total Kurangan</p>
+            <p className="text-lg font-bold text-red-600">{formatCurrency(overallSummary.totalShortage)}</p>
+          </div>
+          <div className="rounded-lg border bg-white p-3 shadow-sm">
+            <p className="text-[10px] text-slate-500 font-medium uppercase">Target</p>
+            <p className="text-lg font-bold text-slate-800">{formatCurrency(overallSummary.totalExpected)}</p>
+          </div>
+          <div className="rounded-lg border bg-white p-3 shadow-sm">
+            <p className="text-[10px] text-sky-600 font-medium uppercase">Rata-rata Bayar</p>
+            <p className="text-lg font-bold text-sky-700">{overallSummary.avgPaymentRate}%</p>
+          </div>
+        </div>
+
+        {/* Week Filter */}
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="text-xs text-slate-500 font-medium">Filter Minggu:</span>
+          <button
+            className={`h-7 px-3 rounded-md text-xs font-medium border transition-colors ${
+              dailyMatrixWeek === 0 ? 'bg-slate-800 text-white border-slate-800' : 'border-slate-200 text-slate-600 bg-white hover:bg-slate-50'
+            }`}
+            onClick={() => setDailyMatrixWeek(0)}
+          >
+            Semua
+          </button>
+          {[1, 2, 3, 4, 5].map(w => (
+            <button
+              key={w}
+              className={`h-7 px-3 rounded-md text-xs font-medium border transition-colors ${
+                dailyMatrixWeek === w ? 'bg-slate-800 text-white border-slate-800' : 'border-slate-200 text-slate-600 bg-white hover:bg-slate-50'
+              }`}
+              onClick={() => setDailyMatrixWeek(w)}
+            >
+              Minggu {w}
+            </button>
+          ))}
+        </div>
+
+        {/* Weekly Matrix Tables */}
+        {Object.entries(displayWeeks).map(([weekNum, cols]) => (
+          <div key={weekNum} className="space-y-2">
+            <h4 className="text-xs font-semibold text-slate-600 flex items-center gap-1">
+              <Calendar className="w-3.5 h-3.5" />
+              Minggu {weekNum} ({formatDateShort(cols[0]?.date || '')} — {formatDateShort(cols[cols.length - 1]?.date || '')})
+            </h4>
+            <div className="rounded-xl border bg-white shadow-sm overflow-hidden">
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="bg-slate-50/80 border-b">
+                      <th className="text-left p-2 min-w-[120px] sticky left-0 bg-slate-50 z-10 font-semibold text-slate-600">Nama KK</th>
+                      {cols.map(col => {
+                        const isToday = col.date === today;
+                        const isFuture = col.date > today;
+                        return (
+                          <th
+                            key={col.date}
+                            className={`text-center p-1.5 min-w-[52px] font-medium ${
+                              isToday ? 'bg-amber-100 text-amber-800' : isFuture ? 'text-slate-300' : 'text-slate-500'
+                            }`}
+                          >
+                            <div className="text-[9px]">{col.nightLabel}</div>
+                            <div className="text-[10px] font-bold">{col.date.slice(8)}</div>
+                            {col.groupName && (
+                              <div className="text-[8px] text-slate-400 mt-0.5">G{col.dayOfWeek + 1}</div>
+                            )}
+                          </th>
+                        );
+                      })}
+                      <th className="text-right p-2 min-w-[50px] font-semibold text-emerald-600 bg-slate-50">Lunas</th>
+                      <th className="text-right p-2 min-w-[50px] font-semibold text-red-600 bg-slate-50">Kurang</th>
+                      <th className="text-right p-2 min-w-[44px] font-semibold text-sky-600 bg-slate-50">%</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {familyRows.map((family, idx) => {
+                      const weekCols = cols;
+                      const weekPaid = weekCols.reduce((sum, col) => sum + (family.dailyData[col.date]?.paidAmount || 0), 0);
+                      const weekShortage = weekCols.reduce((sum, col) => sum + (family.dailyData[col.date]?.shortage || 0), 0);
+                      const weekExpected = weekCols.length * jimpitanAmount;
+                      const weekRate = weekExpected > 0 ? Math.round((weekPaid / weekExpected) * 100) : 0;
+
+                      return (
+                        <tr key={family.familyId} className={`border-b ${idx % 2 === 0 ? 'bg-white' : 'bg-slate-50/30'}`}>
+                          <td className="p-2 font-medium text-slate-800 sticky left-0 bg-inherit z-10 truncate max-w-[120px]" title={family.familyHead}>
+                            <span className="text-[11px]">{family.familyHead}</span>
+                          </td>
+                          {weekCols.map(col => {
+                            const data = family.dailyData[col.date];
+                            const isToday = col.date === today;
+                            const isFuture = col.date > today;
+                            const paid = data?.paidAmount ?? 0;
+                            const shortage = data?.shortage ?? (isFuture ? 0 : jimpitanAmount);
+
+                            let cellBg = 'bg-white';
+                            let cellText = '';
+                            let cellContent = '';
+
+                            if (isFuture) {
+                              cellBg = 'bg-slate-50';
+                              cellContent = '—';
+                              cellText = 'text-slate-300';
+                            } else if (paid >= jimpitanAmount) {
+                              cellBg = 'bg-emerald-50';
+                              cellContent = '✓';
+                              cellText = 'text-emerald-600';
+                            } else if (paid > 0) {
+                              cellBg = 'bg-amber-50';
+                              cellContent = `${paid >= 1000 ? '1rb' : paid >= 500 ? '5r' : paid}`;
+                              cellText = 'text-amber-700';
+                            } else {
+                              cellBg = 'bg-red-50';
+                              cellContent = '✗';
+                              cellText = 'text-red-500';
+                            }
+
+                            return (
+                              <td
+                                key={col.date}
+                                className={`text-center p-1 ${cellBg} ${cellText} ${isToday ? 'ring-1 ring-amber-400' : ''} font-medium`}
+                                title={`${family.familyHead} — ${col.date}: ${isFuture ? 'Belum' : `Bayar ${formatCurrency(paid)}, Kurang ${formatCurrency(shortage)}`}`}
+                              >
+                                <span className="text-[10px]">{cellContent}</span>
+                              </td>
+                            );
+                          })}
+                          <td className="text-right p-2 font-bold text-emerald-700">{formatCurrency(weekPaid)}</td>
+                          <td className={`text-right p-2 font-bold ${weekShortage > 0 ? 'text-red-600' : 'text-slate-300'}`}>
+                            {weekShortage > 0 ? formatCurrency(weekShortage) : '—'}
+                          </td>
+                          <td className={`text-right p-2 font-bold ${weekRate >= 80 ? 'text-emerald-600' : weekRate >= 50 ? 'text-amber-600' : 'text-red-600'}`}>
+                            {weekRate}%
+                          </td>
+                        </tr>
+                      );
+                    })}
+                    {/* Total Row */}
+                    <tr className="bg-slate-100 border-t-2 border-slate-300 font-bold">
+                      <td className="p-2 sticky left-0 bg-slate-100 z-10 text-slate-700">TOTAL</td>
+                      {cols.map(col => {
+                        const dayPaid = familyRows.reduce((sum, f) => sum + (f.dailyData[col.date]?.paidAmount || 0), 0);
+                        const isFuture = col.date > today;
+                        return (
+                          <td key={col.date} className={`text-center p-1 ${isFuture ? 'text-slate-300' : 'text-emerald-700'}`}>
+                            <span className="text-[9px]">{isFuture ? '—' : formatCurrency(dayPaid)}</span>
+                          </td>
+                        );
+                      })}
+                      <td className="text-right p-2 text-emerald-700">
+                        {formatCurrency(cols.reduce((sum, col) => sum + familyRows.reduce((s, f) => s + (f.dailyData[col.date]?.paidAmount || 0), 0), 0))}
+                      </td>
+                      <td className="text-right p-2 text-red-600">
+                        {formatCurrency(cols.reduce((sum, col) => sum + familyRows.reduce((s, f) => s + (f.dailyData[col.date]?.shortage || 0), 0), 0))}
+                      </td>
+                      <td className="text-right p-2 text-sky-700">
+                        {(() => {
+                          const totalExp = cols.length * jimpitanAmount * familyRows.length;
+                          const totalPd = cols.reduce((sum, col) => sum + familyRows.reduce((s, f) => s + (f.dailyData[col.date]?.paidAmount || 0), 0), 0);
+                          return totalExp > 0 ? Math.round((totalPd / totalExp) * 100) : 0;
+                        })()}%
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        ))}
+
+        {/* Family Shortage Ranking */}
+        <div className="rounded-xl border bg-white shadow-sm overflow-hidden">
+          <div className="p-3 border-b bg-slate-50/50">
+            <h3 className="text-xs font-semibold text-slate-700 flex items-center gap-1">
+              <AlertTriangle className="w-3.5 h-3.5 text-amber-500" />
+              Peringkat Kekurangan ({familyRows.filter(f => f.summary.totalShortage > 0).length} warga)
+            </h3>
+          </div>
+          <div className="overflow-x-auto max-h-80 overflow-y-auto">
+            <table className="w-full text-xs">
+              <thead className="sticky top-0 bg-slate-50 z-10">
+                <tr className="border-b">
+                  <th className="text-left p-2 w-8">#</th>
+                  <th className="text-left p-2 min-w-[120px]">Nama KK</th>
+                  <th className="text-center p-2 w-12">Lunas</th>
+                  <th className="text-center p-2 w-12">Kurang</th>
+                  <th className="text-center p-2 w-12">Tidak</th>
+                  <th className="text-right p-2 min-w-[80px]">Terkumpul</th>
+                  <th className="text-right p-2 min-w-[80px]">Kekurangan</th>
+                  <th className="text-right p-2 w-12">%</th>
+                </tr>
+              </thead>
+              <tbody>
+                {[...familyRows]
+                  .sort((a, b) => b.summary.totalShortage - a.summary.totalShortage)
+                  .map((family, idx) => {
+                    const s = family.summary;
+                    if (s.totalShortage === 0 && s.totalPaid >= s.totalExpected) return null;
+                    return (
+                      <tr key={family.familyId} className={`border-b ${s.totalShortage > 20000 ? 'bg-red-50/50' : s.totalShortage > 10000 ? 'bg-amber-50/30' : ''}`}>
+                        <td className="p-2 text-slate-400">{idx + 1}</td>
+                        <td className="p-2 font-medium text-slate-800 truncate max-w-[120px]" title={family.familyHead}>
+                          {family.familyHead}
+                        </td>
+                        <td className="p-2 text-center text-emerald-600 font-medium">{s.daysPaid}</td>
+                        <td className="p-2 text-center text-amber-600 font-medium">{s.daysPartial}</td>
+                        <td className="p-2 text-center text-red-500 font-medium">{s.daysMissed}</td>
+                        <td className="p-2 text-right text-emerald-700">{formatCurrency(s.totalPaid)}</td>
+                        <td className={`p-2 text-right font-bold ${s.totalShortage > 0 ? 'text-red-600' : 'text-emerald-600'}`}>
+                          {s.totalShortage > 0 ? formatCurrency(s.totalShortage) : '✓'}
+                        </td>
+                        <td className={`p-2 text-right font-bold ${
+                          s.paymentRate >= 80 ? 'text-emerald-600' : s.paymentRate >= 50 ? 'text-amber-600' : 'text-red-600'
+                        }`}>
+                          {s.paymentRate}%
+                        </td>
+                      </tr>
+                    );
+                  })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        {/* Legend */}
+        <div className="flex items-center gap-4 flex-wrap text-[10px] text-slate-500 px-1">
+          <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-emerald-50 border border-emerald-200 inline-block" /> Lunas (Rp.1.000)</span>
+          <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-amber-50 border border-amber-200 inline-block" /> Sebagian (&lt;Rp.1.000)</span>
+          <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-red-50 border border-red-200 inline-block" /> Tidak Bayar</span>
+          <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-slate-50 border border-slate-200 inline-block" /> Belum terjadi</span>
+          <span className="flex items-center gap-1"><span className="w-3 h-3 rounded ring-1 ring-amber-400 inline-block" /> Hari ini</span>
+        </div>
+
+        {/* Back Button */}
+        <div className="flex items-center gap-2">
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-9 text-xs"
+            onClick={exitDailyMatrix}
+          >
+            <ArrowLeft className="w-3.5 h-3.5 mr-1" />
+            Kembali ke Selapanan
+          </Button>
+          <Button
+            size="sm"
+            className="h-9 bg-slate-800 hover:bg-slate-700 text-white text-xs"
+            onClick={() => fetchDailyMatrix(selapanan.id)}
+            disabled={loadingDailyMatrix}
+          >
+            <Loader2 className={`w-3.5 h-3.5 mr-1 ${loadingDailyMatrix ? 'animate-spin' : ''}`} />
+            Refresh Data
+          </Button>
+        </div>
+      </div>
+    );
+  };
+
+  // ----------------------------------------
   // Loading Skeleton
   // ----------------------------------------
 
@@ -613,6 +975,21 @@ export function SelapananPage({ userId, familyId, isAdmin }: Props) {
 
           {/* Financial Summary Grid */}
           <CardContent className="p-4">
+            {/* Quick access to Daily Matrix - always visible */}
+            {isAdmin && (
+              <div className="mb-4">
+                <Button
+                  size="sm"
+                  className="w-full h-10 bg-teal-600 hover:bg-teal-700 text-white text-xs rounded-lg"
+                  onClick={() => fetchDailyMatrix(upcoming.id)}
+                  disabled={loadingDailyMatrix}
+                >
+                  {loadingDailyMatrix ? <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" /> : <Eye className="w-3.5 h-3.5 mr-1" />}
+                  Lihat Rekap Harian 35 Hari — Kurangan Jimpitan per Warga per Hari
+                </Button>
+              </div>
+            )}
+
             {isLoading ? (
               <div className="flex items-center justify-center py-8">
                 <Loader2 className="w-5 h-5 animate-spin text-slate-400 mr-2" />
@@ -880,7 +1257,7 @@ export function SelapananPage({ userId, familyId, isAdmin }: Props) {
 
                 {/* Admin Actions */}
                 {isAdmin && (
-                  <div className="flex items-center gap-2 pt-3 border-t">
+                  <div className="flex items-center gap-2 pt-3 border-t flex-wrap">
                     <Button
                       size="sm"
                       className="h-9 bg-slate-800 hover:bg-slate-700 text-white text-xs"
@@ -888,6 +1265,15 @@ export function SelapananPage({ userId, familyId, isAdmin }: Props) {
                     >
                       <Loader2 className={`w-3.5 h-3.5 mr-1 ${loadingRecapId === upcoming.id ? 'animate-spin' : ''}`} />
                       Refresh Rekap
+                    </Button>
+                    <Button
+                      size="sm"
+                      className="h-9 bg-teal-600 hover:bg-teal-700 text-white text-xs"
+                      onClick={() => fetchDailyMatrix(upcoming.id)}
+                      disabled={loadingDailyMatrix}
+                    >
+                      {loadingDailyMatrix ? <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" /> : <Eye className="w-3.5 h-3.5 mr-1" />}
+                      Rekap Harian 35 Hari
                     </Button>
                     <Button
                       size="sm"
@@ -1077,12 +1463,26 @@ export function SelapananPage({ userId, familyId, isAdmin }: Props) {
 
     if (combined.length === 0) {
       return (
-        <Card className="rounded-xl border shadow-sm">
-          <CardContent className="p-6 text-center">
-            <CheckCircle2 className="w-8 h-8 text-emerald-400 mx-auto mb-2" />
-            <p className="text-sm text-slate-500">Tidak ada kurangan jimpitan</p>
-          </CardContent>
-        </Card>
+        <div className="space-y-3">
+          <Card className="rounded-xl border shadow-sm">
+            <CardContent className="p-6 text-center">
+              <CheckCircle2 className="w-8 h-8 text-emerald-400 mx-auto mb-2" />
+              <p className="text-sm text-slate-500">Tidak ada kurangan jimpitan</p>
+            </CardContent>
+          </Card>
+          {/* Link to daily matrix */}
+          {upcoming && (
+            <Button
+              size="sm"
+              className="w-full h-10 bg-teal-600 hover:bg-teal-700 text-white text-xs"
+              onClick={() => { exitCollectionMode(); fetchDailyMatrix(upcoming.id); }}
+              disabled={loadingDailyMatrix}
+            >
+              {loadingDailyMatrix ? <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" /> : <Eye className="w-3.5 h-3.5 mr-1" />}
+              Lihat Rekap Harian 35 Hari
+            </Button>
+          )}
+        </div>
       );
     }
 
@@ -1206,13 +1606,22 @@ export function SelapananPage({ userId, familyId, isAdmin }: Props) {
             </Table>
           </div>
         </div>
+
+        {/* Link to daily matrix */}
+        {upcoming && (
+          <Button
+            size="sm"
+            className="w-full h-10 bg-teal-600 hover:bg-teal-700 text-white text-xs"
+            onClick={() => { exitCollectionMode(); fetchDailyMatrix(upcoming.id); }}
+            disabled={loadingDailyMatrix}
+          >
+            {loadingDailyMatrix ? <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" /> : <Eye className="w-3.5 h-3.5 mr-1" />}
+            Lihat Rekap Harian 35 Hari — Detail Per Warga Per Hari
+          </Button>
+        )}
       </div>
     );
   };
-
-  // ----------------------------------------
-  // Tab 2: Setoran Ronda Grup
-  // ----------------------------------------
 
   const renderRondaGroupTab = (recap: RecapData) => {
     const groups = recap.jimpitanByGroup;
@@ -1746,8 +2155,10 @@ export function SelapananPage({ userId, familyId, isAdmin }: Props) {
         )}
       </div>
 
-      {/* Collection Mode or Preview Mode */}
-      {collectionMode ? (
+      {/* Collection Mode, Daily Matrix, or Preview Mode */}
+      {showDailyMatrix ? (
+        renderDailyMatrix()
+      ) : collectionMode ? (
         renderCollectionMode()
       ) : (
         <>

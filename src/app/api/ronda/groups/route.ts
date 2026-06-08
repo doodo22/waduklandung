@@ -12,12 +12,16 @@ export async function GET(request: NextRequest) {
       orderBy: { dayOfWeek: 'asc' },
       include: {
         families: {
-          where: { isActive: true },
+          where: {
+            isActive: true,
+            rondaStatus: 'AKTIF',  // Only show AKTIF ronda members in groups
+          },
           select: {
             id: true,
             familyHead: true,
             address: true,
             rondaGroupId: true,
+            rondaStatus: true,
           },
           orderBy: { familyHead: 'asc' },
         },
@@ -49,10 +53,18 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Grup ronda tidak ditemukan' }, { status: 404 });
     }
 
-    // Verify the family exists
+    // Verify the family exists and is eligible for ronda
     const family = await db.family.findUnique({ where: { id: familyId } });
     if (!family) {
       return NextResponse.json({ error: 'Keluarga tidak ditemukan' }, { status: 404 });
+    }
+
+    // Only AKTIF families can be assigned to ronda groups
+    if (family.rondaStatus !== 'AKTIF') {
+      return NextResponse.json(
+        { error: 'Keluarga dengan status Kasepuhan/Bayar Iuran tidak dapat dimasukkan ke grup ronda' },
+        { status: 400 }
+      );
     }
 
     // Update the family's rondaGroupId (allows moving from another group)
@@ -66,12 +78,13 @@ export async function POST(request: NextRequest) {
       where: { id: groupId },
       include: {
         families: {
-          where: { isActive: true },
+          where: { isActive: true, rondaStatus: 'AKTIF' },
           select: {
             id: true,
             familyHead: true,
             address: true,
             rondaGroupId: true,
+            rondaStatus: true,
           },
           orderBy: { familyHead: 'asc' },
         },
