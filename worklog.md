@@ -32,3 +32,23 @@ Stage Summary:
 - Warga feature: "Lihat Rekap Harian Jimpitan Saya" personal daily history
 - Data persistence confirmed: seed.ts won't reset data
 - BULANAN auto-disable confirmed working
+---
+Task ID: 1
+Agent: Main Agent
+Task: Modify Semua tab to show weekly recap and remove ranking feature
+
+Work Log:
+- Read and analyzed selapanan-page.tsx (2316 lines) to understand the daily matrix rendering
+- Identified the renderDailyMatrix() function and its week filtering logic
+- Replaced the "Semua" (dailyMatrixWeek === 0) view: instead of showing 5 individual weekly tables with all families, now shows a concise recap table with Week 1-5 rows showing: No, Minggu, Tanggal, Hari, Target, Terkumpul, Kurangan, %
+- Each week row in the recap is clickable to navigate to that week's detailed view
+- Added a "TOTAL 35 HARI" total row in the recap
+- Removed the "Peringkat Kekurangan" (Family Shortage Ranking) section entirely
+- Fixed JSX parsing error (can't use {expression} directly in ternary else branch)
+- Verified with lint (0 errors), dev server (no runtime errors), and Agent Browser e2e testing
+
+Stage Summary:
+- "Semua" tab now shows a clean weekly recap instead of 5 heavy tables
+- Ranking feature removed as requested
+- Clicking a week row in recap navigates to detailed weekly view
+- All features verified working via browser testing

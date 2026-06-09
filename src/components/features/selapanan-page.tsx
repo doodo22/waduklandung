@@ -593,190 +593,215 @@ export function SelapananPage({ userId, familyId, isAdmin }: Props) {
           ))}
         </div>
 
-        {/* Weekly Matrix Tables */}
-        {Object.entries(displayWeeks).map(([weekNum, cols]) => (
-          <div key={weekNum} className="space-y-2">
-            <h4 className="text-xs font-semibold text-slate-600 flex items-center gap-1">
-              <Calendar className="w-3.5 h-3.5" />
-              Minggu {weekNum} ({formatDateShort(cols[0]?.date || '')} — {formatDateShort(cols[cols.length - 1]?.date || '')})
-            </h4>
-            <div className="rounded-xl border bg-white shadow-sm overflow-hidden">
-              <div className="overflow-x-auto">
-                <table className="w-full text-xs">
-                  <thead>
-                    <tr className="bg-slate-50/80 border-b">
-                      <th className="text-left p-2 min-w-[120px] sticky left-0 bg-slate-50 z-10 font-semibold text-slate-600">Nama KK</th>
-                      {cols.map(col => {
-                        const isToday = col.date === today;
-                        const isFuture = col.date > today;
-                        return (
-                          <th
-                            key={col.date}
-                            className={`text-center p-1.5 min-w-[52px] font-medium ${
-                              isToday ? 'bg-amber-100 text-amber-800' : isFuture ? 'text-slate-300' : 'text-slate-500'
-                            }`}
-                          >
-                            <div className="text-[9px]">{col.nightLabel}</div>
-                            <div className="text-[10px] font-bold">{col.date.slice(8)}</div>
-                            {col.groupName && (
-                              <div className="text-[8px] text-slate-400 mt-0.5">G{col.dayOfWeek + 1}</div>
-                            )}
-                          </th>
-                        );
-                      })}
-                      <th className="text-right p-2 min-w-[50px] font-semibold text-emerald-600 bg-slate-50">Lunas</th>
-                      <th className="text-right p-2 min-w-[50px] font-semibold text-red-600 bg-slate-50">Kurang</th>
-                      <th className="text-right p-2 min-w-[44px] font-semibold text-sky-600 bg-slate-50">%</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {familyRows.map((family, idx) => {
-                      const weekCols = cols;
-                      const weekPaid = weekCols.reduce((sum, col) => sum + (family.dailyData[col.date]?.paidAmount || 0), 0);
-                      const weekShortage = weekCols.reduce((sum, col) => sum + (family.dailyData[col.date]?.shortage || 0), 0);
-                      const weekExpected = weekCols.length * jimpitanAmount;
-                      const weekRate = weekExpected > 0 ? Math.round((weekPaid / weekExpected) * 100) : 0;
-
-                      return (
-                        <tr key={family.familyId} className={`border-b ${idx % 2 === 0 ? 'bg-white' : 'bg-slate-50/30'}`}>
-                          <td className="p-2 font-medium text-slate-800 sticky left-0 bg-inherit z-10 truncate max-w-[120px]" title={family.familyHead}>
-                            <span className="text-[11px]">{family.familyHead}</span>
-                          </td>
-                          {weekCols.map(col => {
-                            const data = family.dailyData[col.date];
-                            const isToday = col.date === today;
-                            const isFuture = col.date > today;
-                            const paid = data?.paidAmount ?? 0;
-                            const shortage = data?.shortage ?? (isFuture ? 0 : jimpitanAmount);
-
-                            let cellBg = 'bg-white';
-                            let cellText = '';
-                            let cellContent = '';
-
-                            if (isFuture) {
-                              cellBg = 'bg-slate-50';
-                              cellContent = '—';
-                              cellText = 'text-slate-300';
-                            } else if (paid >= jimpitanAmount) {
-                              cellBg = 'bg-emerald-50';
-                              cellContent = '✓';
-                              cellText = 'text-emerald-600';
-                            } else if (paid > 0) {
-                              cellBg = 'bg-amber-50';
-                              cellContent = `${paid >= 1000 ? '1rb' : paid >= 500 ? '5r' : paid}`;
-                              cellText = 'text-amber-700';
-                            } else {
-                              cellBg = 'bg-red-50';
-                              cellContent = '✗';
-                              cellText = 'text-red-500';
-                            }
-
-                            return (
-                              <td
-                                key={col.date}
-                                className={`text-center p-1 ${cellBg} ${cellText} ${isToday ? 'ring-1 ring-amber-400' : ''} font-medium`}
-                                title={`${family.familyHead} — ${col.date}: ${isFuture ? 'Belum' : `Bayar ${formatCurrency(paid)}, Kurang ${formatCurrency(shortage)}`}`}
-                              >
-                                <span className="text-[10px]">{cellContent}</span>
-                              </td>
-                            );
-                          })}
-                          <td className="text-right p-2 font-bold text-emerald-700">{formatCurrency(weekPaid)}</td>
-                          <td className={`text-right p-2 font-bold ${weekShortage > 0 ? 'text-red-600' : 'text-slate-300'}`}>
-                            {weekShortage > 0 ? formatCurrency(weekShortage) : '—'}
-                          </td>
-                          <td className={`text-right p-2 font-bold ${weekRate >= 80 ? 'text-emerald-600' : weekRate >= 50 ? 'text-amber-600' : 'text-red-600'}`}>
-                            {weekRate}%
-                          </td>
-                        </tr>
-                      );
-                    })}
-                    {/* Total Row */}
-                    <tr className="bg-slate-100 border-t-2 border-slate-300 font-bold">
-                      <td className="p-2 sticky left-0 bg-slate-100 z-10 text-slate-700">TOTAL</td>
-                      {cols.map(col => {
-                        const dayPaid = familyRows.reduce((sum, f) => sum + (f.dailyData[col.date]?.paidAmount || 0), 0);
-                        const isFuture = col.date > today;
-                        return (
-                          <td key={col.date} className={`text-center p-1 ${isFuture ? 'text-slate-300' : 'text-emerald-700'}`}>
-                            <span className="text-[9px]">{isFuture ? '—' : formatCurrency(dayPaid)}</span>
-                          </td>
-                        );
-                      })}
-                      <td className="text-right p-2 text-emerald-700">
-                        {formatCurrency(cols.reduce((sum, col) => sum + familyRows.reduce((s, f) => s + (f.dailyData[col.date]?.paidAmount || 0), 0), 0))}
-                      </td>
-                      <td className="text-right p-2 text-red-600">
-                        {formatCurrency(cols.reduce((sum, col) => sum + familyRows.reduce((s, f) => s + (f.dailyData[col.date]?.shortage || 0), 0), 0))}
-                      </td>
-                      <td className="text-right p-2 text-sky-700">
-                        {(() => {
-                          const totalExp = cols.length * jimpitanAmount * familyRows.length;
-                          const totalPd = cols.reduce((sum, col) => sum + familyRows.reduce((s, f) => s + (f.dailyData[col.date]?.paidAmount || 0), 0), 0);
-                          return totalExp > 0 ? Math.round((totalPd / totalExp) * 100) : 0;
-                        })()}%
-                      </td>
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
+        {/* "Semua" = Recap Summary, or Detailed Weekly Table */}
+        {dailyMatrixWeek === 0 ? (
+          /* Recap Summary for All Weeks */
+          <div className="rounded-xl border bg-white shadow-sm overflow-hidden">
+            <div className="p-3 border-b bg-slate-50/50">
+              <h3 className="text-xs font-semibold text-slate-700 flex items-center gap-1">
+                <TrendingUp className="w-3.5 h-3.5 text-emerald-500" />
+                Rekap Mingguan — 35 Hari
+              </h3>
             </div>
-          </div>
-        ))}
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="bg-slate-50/80 border-b">
+                    <th className="text-left p-2.5 font-semibold text-slate-600 w-10">No</th>
+                    <th className="text-left p-2.5 font-semibold text-slate-600 min-w-[100px]">Minggu</th>
+                    <th className="text-left p-2.5 font-semibold text-slate-600 min-w-[140px]">Tanggal</th>
+                    <th className="text-center p-2.5 font-semibold text-slate-600 w-14">Hari</th>
+                    <th className="text-right p-2.5 font-semibold text-slate-600 min-w-[90px]">Target</th>
+                    <th className="text-right p-2.5 font-semibold text-emerald-600 min-w-[90px]">Terkumpul</th>
+                    <th className="text-right p-2.5 font-semibold text-red-600 min-w-[90px]">Kurangan</th>
+                    <th className="text-right p-2.5 font-semibold text-sky-600 w-14">%</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {[1, 2, 3, 4, 5].map(weekNum => {
+                    const cols = weeks[weekNum] || [];
+                    if (cols.length === 0) return null;
+                    const weekPaid = cols.reduce((sum, col) => sum + familyRows.reduce((s, f) => s + (f.dailyData[col.date]?.paidAmount || 0), 0), 0);
+                    const weekShortage = cols.reduce((sum, col) => sum + familyRows.reduce((s, f) => s + (f.dailyData[col.date]?.shortage || 0), 0), 0);
+                    const weekExpected = cols.length * jimpitanAmount * familyRows.length;
+                    const weekRate = weekExpected > 0 ? Math.round((weekPaid / weekExpected) * 100) : 0;
+                    const isCurrentWeek = cols.some(col => col.date === today);
 
-        {/* Family Shortage Ranking */}
-        <div className="rounded-xl border bg-white shadow-sm overflow-hidden">
-          <div className="p-3 border-b bg-slate-50/50">
-            <h3 className="text-xs font-semibold text-slate-700 flex items-center gap-1">
-              <AlertTriangle className="w-3.5 h-3.5 text-amber-500" />
-              Peringkat Kekurangan ({familyRows.filter(f => f.summary.totalShortage > 0).length} warga)
-            </h3>
-          </div>
-          <div className="overflow-x-auto max-h-80 overflow-y-auto">
-            <table className="w-full text-xs">
-              <thead className="sticky top-0 bg-slate-50 z-10">
-                <tr className="border-b">
-                  <th className="text-left p-2 w-8">#</th>
-                  <th className="text-left p-2 min-w-[120px]">Nama KK</th>
-                  <th className="text-center p-2 w-12">Lunas</th>
-                  <th className="text-center p-2 w-12">Kurang</th>
-                  <th className="text-center p-2 w-12">Tidak</th>
-                  <th className="text-right p-2 min-w-[80px]">Terkumpul</th>
-                  <th className="text-right p-2 min-w-[80px]">Kekurangan</th>
-                  <th className="text-right p-2 w-12">%</th>
-                </tr>
-              </thead>
-              <tbody>
-                {[...familyRows]
-                  .sort((a, b) => b.summary.totalShortage - a.summary.totalShortage)
-                  .map((family, idx) => {
-                    const s = family.summary;
-                    if (s.totalShortage === 0 && s.totalPaid >= s.totalExpected) return null;
                     return (
-                      <tr key={family.familyId} className={`border-b ${s.totalShortage > 20000 ? 'bg-red-50/50' : s.totalShortage > 10000 ? 'bg-amber-50/30' : ''}`}>
-                        <td className="p-2 text-slate-400">{idx + 1}</td>
-                        <td className="p-2 font-medium text-slate-800 truncate max-w-[120px]" title={family.familyHead}>
-                          {family.familyHead}
+                      <tr
+                        key={weekNum}
+                        className={`border-b cursor-pointer hover:bg-slate-50/80 transition-colors ${isCurrentWeek ? 'bg-amber-50/50' : weekNum % 2 === 0 ? 'bg-white' : 'bg-slate-50/30'}`}
+                        onClick={() => setDailyMatrixWeek(weekNum)}
+                      >
+                        <td className="p-2.5 text-slate-400 font-medium">{weekNum}</td>
+                        <td className="p-2.5 font-semibold text-slate-800">Minggu {weekNum}</td>
+                        <td className="p-2.5 text-slate-600">
+                          {formatDateShort(cols[0]?.date || '')} — {formatDateShort(cols[cols.length - 1]?.date || '')}
                         </td>
-                        <td className="p-2 text-center text-emerald-600 font-medium">{s.daysPaid}</td>
-                        <td className="p-2 text-center text-amber-600 font-medium">{s.daysPartial}</td>
-                        <td className="p-2 text-center text-red-500 font-medium">{s.daysMissed}</td>
-                        <td className="p-2 text-right text-emerald-700">{formatCurrency(s.totalPaid)}</td>
-                        <td className={`p-2 text-right font-bold ${s.totalShortage > 0 ? 'text-red-600' : 'text-emerald-600'}`}>
-                          {s.totalShortage > 0 ? formatCurrency(s.totalShortage) : '✓'}
+                        <td className="p-2.5 text-center text-slate-500">{cols.length}</td>
+                        <td className="p-2.5 text-right text-slate-700">{formatCurrency(weekExpected)}</td>
+                        <td className="p-2.5 text-right font-bold text-emerald-700">{formatCurrency(weekPaid)}</td>
+                        <td className={`p-2.5 text-right font-bold ${weekShortage > 0 ? 'text-red-600' : 'text-emerald-600'}`}>
+                          {weekShortage > 0 ? formatCurrency(weekShortage) : '✓'}
                         </td>
-                        <td className={`p-2 text-right font-bold ${
-                          s.paymentRate >= 80 ? 'text-emerald-600' : s.paymentRate >= 50 ? 'text-amber-600' : 'text-red-600'
-                        }`}>
-                          {s.paymentRate}%
+                        <td className={`p-2.5 text-right font-bold ${weekRate >= 80 ? 'text-emerald-600' : weekRate >= 50 ? 'text-amber-600' : 'text-red-600'}`}>
+                          {weekRate}%
                         </td>
                       </tr>
                     );
                   })}
-              </tbody>
-            </table>
+                  {/* Total Row */}
+                  <tr className="bg-slate-100 border-t-2 border-slate-300 font-bold">
+                    <td className="p-2.5 text-slate-500" colSpan={3}>TOTAL 35 HARI</td>
+                    <td className="p-2.5 text-center text-slate-600">{dailyColumns.length}</td>
+                    <td className="p-2.5 text-right text-slate-700">{formatCurrency(overallSummary.totalExpected)}</td>
+                    <td className="p-2.5 text-right text-emerald-700">{formatCurrency(overallSummary.totalPaid)}</td>
+                    <td className={`p-2.5 text-right ${overallSummary.totalShortage > 0 ? 'text-red-600' : 'text-emerald-600'}`}>
+                      {overallSummary.totalShortage > 0 ? formatCurrency(overallSummary.totalShortage) : '✓'}
+                    </td>
+                    <td className={`p-2.5 text-right ${overallSummary.avgPaymentRate >= 80 ? 'text-emerald-600' : overallSummary.avgPaymentRate >= 50 ? 'text-amber-600' : 'text-red-600'}`}>
+                      {overallSummary.avgPaymentRate}%
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <div className="p-2.5 border-t bg-slate-50/50 text-center">
+              <p className="text-[10px] text-slate-400">Klik baris minggu untuk melihat detail harian per warga</p>
+            </div>
           </div>
-        </div>
+        ) : (
+          /* Detailed Weekly Table for Selected Week */
+          Object.entries(displayWeeks).map(([weekNum, cols]) => (
+            <div key={weekNum} className="space-y-2">
+              <h4 className="text-xs font-semibold text-slate-600 flex items-center gap-1">
+                <Calendar className="w-3.5 h-3.5" />
+                Minggu {weekNum} ({formatDateShort(cols[0]?.date || '')} — {formatDateShort(cols[cols.length - 1]?.date || '')})
+              </h4>
+              <div className="rounded-xl border bg-white shadow-sm overflow-hidden">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-xs">
+                    <thead>
+                      <tr className="bg-slate-50/80 border-b">
+                        <th className="text-left p-2 min-w-[120px] sticky left-0 bg-slate-50 z-10 font-semibold text-slate-600">Nama KK</th>
+                        {cols.map(col => {
+                          const isToday = col.date === today;
+                          const isFuture = col.date > today;
+                          return (
+                            <th
+                              key={col.date}
+                              className={`text-center p-1.5 min-w-[52px] font-medium ${
+                                isToday ? 'bg-amber-100 text-amber-800' : isFuture ? 'text-slate-300' : 'text-slate-500'
+                              }`}
+                            >
+                              <div className="text-[9px]">{col.nightLabel}</div>
+                              <div className="text-[10px] font-bold">{col.date.slice(8)}</div>
+                              {col.groupName && (
+                                <div className="text-[8px] text-slate-400 mt-0.5">G{col.dayOfWeek + 1}</div>
+                              )}
+                            </th>
+                          );
+                        })}
+                        <th className="text-right p-2 min-w-[50px] font-semibold text-emerald-600 bg-slate-50">Lunas</th>
+                        <th className="text-right p-2 min-w-[50px] font-semibold text-red-600 bg-slate-50">Kurang</th>
+                        <th className="text-right p-2 min-w-[44px] font-semibold text-sky-600 bg-slate-50">%</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {familyRows.map((family, idx) => {
+                        const weekCols = cols;
+                        const weekPaid = weekCols.reduce((sum, col) => sum + (family.dailyData[col.date]?.paidAmount || 0), 0);
+                        const weekShortage = weekCols.reduce((sum, col) => sum + (family.dailyData[col.date]?.shortage || 0), 0);
+                        const weekExpected = weekCols.length * jimpitanAmount;
+                        const weekRate = weekExpected > 0 ? Math.round((weekPaid / weekExpected) * 100) : 0;
+
+                        return (
+                          <tr key={family.familyId} className={`border-b ${idx % 2 === 0 ? 'bg-white' : 'bg-slate-50/30'}`}>
+                            <td className="p-2 font-medium text-slate-800 sticky left-0 bg-inherit z-10 truncate max-w-[120px]" title={family.familyHead}>
+                              <span className="text-[11px]">{family.familyHead}</span>
+                            </td>
+                            {weekCols.map(col => {
+                              const data = family.dailyData[col.date];
+                              const isToday = col.date === today;
+                              const isFuture = col.date > today;
+                              const paid = data?.paidAmount ?? 0;
+                              const shortage = data?.shortage ?? (isFuture ? 0 : jimpitanAmount);
+
+                              let cellBg = 'bg-white';
+                              let cellText = '';
+                              let cellContent = '';
+
+                              if (isFuture) {
+                                cellBg = 'bg-slate-50';
+                                cellContent = '—';
+                                cellText = 'text-slate-300';
+                              } else if (paid >= jimpitanAmount) {
+                                cellBg = 'bg-emerald-50';
+                                cellContent = '✓';
+                                cellText = 'text-emerald-600';
+                              } else if (paid > 0) {
+                                cellBg = 'bg-amber-50';
+                                cellContent = `${paid >= 1000 ? '1rb' : paid >= 500 ? '5r' : paid}`;
+                                cellText = 'text-amber-700';
+                              } else {
+                                cellBg = 'bg-red-50';
+                                cellContent = '✗';
+                                cellText = 'text-red-500';
+                              }
+
+                              return (
+                                <td
+                                  key={col.date}
+                                  className={`text-center p-1 ${cellBg} ${cellText} ${isToday ? 'ring-1 ring-amber-400' : ''} font-medium`}
+                                  title={`${family.familyHead} — ${col.date}: ${isFuture ? 'Belum' : `Bayar ${formatCurrency(paid)}, Kurang ${formatCurrency(shortage)}`}`}
+                                >
+                                  <span className="text-[10px]">{cellContent}</span>
+                                </td>
+                              );
+                            })}
+                            <td className="text-right p-2 font-bold text-emerald-700">{formatCurrency(weekPaid)}</td>
+                            <td className={`text-right p-2 font-bold ${weekShortage > 0 ? 'text-red-600' : 'text-slate-300'}`}>
+                              {weekShortage > 0 ? formatCurrency(weekShortage) : '—'}
+                            </td>
+                            <td className={`text-right p-2 font-bold ${weekRate >= 80 ? 'text-emerald-600' : weekRate >= 50 ? 'text-amber-600' : 'text-red-600'}`}>
+                              {weekRate}%
+                            </td>
+                          </tr>
+                        );
+                      })}
+                      {/* Total Row */}
+                      <tr className="bg-slate-100 border-t-2 border-slate-300 font-bold">
+                        <td className="p-2 sticky left-0 bg-slate-100 z-10 text-slate-700">TOTAL</td>
+                        {cols.map(col => {
+                          const dayPaid = familyRows.reduce((sum, f) => sum + (f.dailyData[col.date]?.paidAmount || 0), 0);
+                          const isFuture = col.date > today;
+                          return (
+                            <td key={col.date} className={`text-center p-1 ${isFuture ? 'text-slate-300' : 'text-emerald-700'}`}>
+                              <span className="text-[9px]">{isFuture ? '—' : formatCurrency(dayPaid)}</span>
+                            </td>
+                          );
+                        })}
+                        <td className="text-right p-2 text-emerald-700">
+                          {formatCurrency(cols.reduce((sum, col) => sum + familyRows.reduce((s, f) => s + (f.dailyData[col.date]?.paidAmount || 0), 0), 0))}
+                        </td>
+                        <td className="text-right p-2 text-red-600">
+                          {formatCurrency(cols.reduce((sum, col) => sum + familyRows.reduce((s, f) => s + (f.dailyData[col.date]?.shortage || 0), 0), 0))}
+                        </td>
+                        <td className="text-right p-2 text-sky-700">
+                          {(() => {
+                            const totalExp = cols.length * jimpitanAmount * familyRows.length;
+                            const totalPd = cols.reduce((sum, col) => sum + familyRows.reduce((s, f) => s + (f.dailyData[col.date]?.paidAmount || 0), 0), 0);
+                            return totalExp > 0 ? Math.round((totalPd / totalExp) * 100) : 0;
+                          })()}%
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          ))
+        )}
 
         {/* Legend */}
         <div className="flex items-center gap-4 flex-wrap text-[10px] text-slate-500 px-1">
