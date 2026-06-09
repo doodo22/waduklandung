@@ -62,6 +62,7 @@ model Family {
   rondaLogs       RondaLog[]
   fines           Fine[]
   shortages       JimpitanShortage[]
+  tarikan         SelapananTarikan[]
   familyMembers   FamilyMember[]
   levyItems       CustomLevyItem[]
 }
@@ -226,6 +227,7 @@ model Selapanan {
   details         SelapananDetail[]
   transactions    Transaction[]
   shortages       JimpitanShortage[]
+  tarikan         SelapananTarikan[]
   levyPayments    CustomLevyPayment[]
   rondaSchedules  RondaSchedule[]
 }
@@ -239,6 +241,32 @@ model SelapananDetail {
   createdAt       DateTime @default(now())
 
   selapanan       Selapanan @relation(fields: [selapananId], references: [id])
+}
+
+// Tarikan per KK per Selapanan — consolidated charge & payment record
+model SelapananTarikan {
+  id                String   @id @default(cuid())
+  selapananId       String
+  familyId          String
+
+  // Charge breakdown (calculated when generated)
+  sisaTarikan       Int      @default(0)  // unpaid from previous selapanan
+  kuranganJimpitan  Int      @default(0)  // daily jimpitan shortage (HARIAN only)
+  iuranBulanan      Int      @default(0)  // monthly dues × months spanned (BULANAN only)
+  iuranRonda        Int      @default(0)  // ronda fee (BAYAR_IURAN only)
+
+  // Payment tracking
+  jumlahBayar       Int      @default(0)  // total amount paid by family
+  sisaDepan         Int      @default(0)  // remaining = totalHarusBayar - jumlahBayar
+
+  notes             String?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  selapanan         Selapanan @relation(fields: [selapananId], references: [id])
+  family            Family    @relation(fields: [familyId], references: [id])
+
+  @@unique([selapananId, familyId])
 }
 
 // ============================================

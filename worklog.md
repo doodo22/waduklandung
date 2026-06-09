@@ -52,3 +52,30 @@ Stage Summary:
 - Ranking feature removed as requested
 - Clicking a week row in recap navigates to detailed weekly view
 - All features verified working via browser testing
+---
+Task ID: 2
+Agent: Main Agent
+Task: Redesign Selapanan collection mode with consolidated per-family "Tarikan Warga" view
+
+Work Log:
+- Added SelapananTarikan model to Prisma schema (sisaTarikan, kuranganJimpitan, iuranBulanan, iuranRonda, jumlahBayar, sisaDepan)
+- Ran db:push to sync database
+- Created GET /api/selapanan/tarikan API - generates and returns per-family consolidated charge records
+- Created POST /api/selapanan/collect-tarikan API - records consolidated payment with priority allocation (sisa → jimpitan → bulanan → ronda)
+- Redesigned collection mode: 4 tabs → 3 tabs (Tarikan Warga, Setoran Ronda, Denda & Lainnya)
+- Tarikan Warga tab: consolidated per-family table with Sisa, Jimpitan, Iuran Bulanan, Iuran Ronda, Total Bayar, Bayar (input), Sisa Depan (live calc), Catat
+- Setoran Ronda tab: added Catatan/notes input field (highlighted amber when deposit < expected and no notes)
+- Denda & Lainnya tab: removed Iuran Ronda section (merged into Tarikan Warga)
+- Added collectNotes state for per-row notes tracking
+- Added fetchTarikan and handleCollectTarikan functions
+- Updated enterCollectionMode to fetch tarikan data and set default tab to 'tarikan'
+- Updated selapanan/complete API to carry over tarikan sisaDepan to next selapanan's JimpitanShortage
+- Updated selapanan/collect API to append notes to ronda_group_setoran transaction description
+- All lint checks pass, dev server running, browser verified all 3 tabs work correctly
+
+Stage Summary:
+- New consolidated "Tarikan Warga" view shows ALL charges per family in one row
+- Payment allocation priority: previous shortage → current jimpitan → monthly dues → ronda fee
+- Unpaid amounts (sisaDepan) carry over to next selapanan automatically
+- Setoran Ronda has notes field for tracking who brought money when deposit < expected
+- 69 KK families displayed correctly in Tarikan Warga table

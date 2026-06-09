@@ -197,7 +197,7 @@ export async function POST(request: NextRequest) {
         const group = await db.rondaGroup.findUnique({ where: { id: familyId }, select: { name: true } });
         if (!group) return NextResponse.json({ error: 'Grup ronda tidak ditemukan' }, { status: 404 });
 
-        transactionDesc = `Setoran jimpitan ${group.name} (Rp${amount.toLocaleString('id-ID')})`;
+        transactionDesc = `Setoran jimpitan ${group.name} (Rp${amount.toLocaleString('id-ID')})${notes ? ` | ${notes}` : ''}`;
         transactionCategory = 'JIMPITAN';
 
         await db.selapanan.update({

@@ -184,10 +184,49 @@ export function SelapananPage({ userId, familyId, isAdmin }: Props) {
 
   // Collection mode state
   const [collectionMode, setCollectionMode] = useState(false);
-  const [collectionTab, setCollectionTab] = useState('shortage');
+  const [collectionTab, setCollectionTab] = useState('tarikan');
   const [collectInputs, setCollectInputs] = useState<Record<string, string>>({});
+  const [collectNotes, setCollectNotes] = useState<Record<string, string>>({});
   const [submittingKey, setSubmittingKey] = useState<string | null>(null);
   const [sessionCollected, setSessionCollected] = useState(0);
+
+  // Tarikan warga state (consolidated per-family view)
+  const [tarikanData, setTarikanData] = useState<{
+    selapanan: { id: string; number: number; periodeStart: string; periodeEnd: string; meetingDate: string };
+    monthsSpanned: number;
+    tarikan: {
+      id: string | null;
+      selapananId: string;
+      familyId: string;
+      familyHead: string;
+      jimpitanType: string;
+      rondaStatus: string;
+      rondaGroup: { id: string; name: string } | null;
+      monthsSpanned: number;
+      sisaTarikan: number;
+      kuranganJimpitan: number;
+      iuranBulanan: number;
+      iuranRonda: number;
+      totalHarusBayar: number;
+      jumlahBayar: number;
+      sisaDepan: number;
+      notes: string | null;
+      prevFromSelapanan: number | null;
+    }[];
+    totals: {
+      totalSisaTarikan: number;
+      totalKuranganJimpitan: number;
+      totalIuranBulanan: number;
+      totalIuranRonda: number;
+      totalHarusBayar: number;
+      totalSudahBayar: number;
+      totalSisaDepan: number;
+      familiesWithSisa: number;
+      familiesTotal: number;
+    };
+    prevRondaNotes: { description: string; amount: number; date: string }[];
+  } | null>(null);
+  const [loadingTarikan, setLoadingTarikan] = useState(false);
 
   // Daily matrix state
   const [showDailyMatrix, setShowDailyMatrix] = useState(false);
@@ -324,6 +363,66 @@ export function SelapananPage({ userId, familyId, isAdmin }: Props) {
   }, []);
 
   // ----------------------------------------
+  // Tarikan Warga
+  // ----------------------------------------
+
+  const fetchTarikan = useCallback(async (selapananId: string) => {
+    setLoadingTarikan(true);
+    try {
+      // First, generate the tarikan records
+      await api.post('/selapanan/tarikan', { selapananId });
+      // Then fetch them
+      const res = await api.get(`/selapanan/tarikan?selapananId=${selapananId}`);
+      if (res.ok) {
+        const data = await res.json();
+        setTarikanData(data);
+      } else {
+        toast.error('Gagal memuat data tarikan');
+      }
+    } catch {
+      toast.error('Terjadi kesalahan');
+    } finally {
+      setLoadingTarikan(false);
+    }
+  }, []);
+
+  const handleCollectTarikan = async (key: string, familyId: string, amount: number, notes?: string) => {
+    setSubmittingKey(key);
+    try {
+      const res = await api.post('/selapanan/collect-tarikan', {
+        selapananId: upcoming!.id,
+        familyId,
+        amount,
+        notes: notes || undefined,
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setSessionCollected(prev => prev + amount);
+        toast.success(data.message);
+        setCollectInputs(prev => {
+          const next = { ...prev };
+          delete next[key];
+          return next;
+        });
+        setCollectNotes(prev => {
+          const next = { ...prev };
+          delete next[key];
+          return next;
+        });
+        // Refresh tarikan data
+        await fetchTarikan(upcoming!.id);
+      } else {
+        const data = await res.json().catch(() => ({}));
+        toast.error(data.error || 'Gagal mencatat pembayaran');
+      }
+    } catch {
+      toast.error('Terjadi kesalahan');
+    } finally {
+      setSubmittingKey(null);
+    }
+  };
+
+  // ----------------------------------------
   // Handlers
   // ----------------------------------------
 
@@ -456,18 +555,23 @@ export function SelapananPage({ userId, familyId, isAdmin }: Props) {
 
   const enterCollectionMode = () => {
     const upcoming = selapananList.find(s => s.status === 'UPCOMING');
-    if (upcoming && !recapMap[upcoming.id]) {
-      fetchRecap(upcoming.id);
+    if (upcoming) {
+      if (!recapMap[upcoming.id]) {
+        fetchRecap(upcoming.id);
+      }
+      fetchTarikan(upcoming.id);
     }
     setCollectionMode(true);
-    setCollectionTab('shortage');
+    setCollectionTab('tarikan');
     setCollectInputs({});
+    setCollectNotes({});
     setSessionCollected(0);
   };
 
   const exitCollectionMode = () => {
     setCollectionMode(false);
     setCollectInputs({});
+    setCollectNotes({});
   };
 
   // ----------------------------------------
@@ -1387,7 +1491,7 @@ export function SelapananPage({ userId, familyId, isAdmin }: Props) {
                 <span className="text-slate-300 text-sm">Selapanan Ke-{upcoming.number}</span>
               </div>
               <h3 className="text-base font-bold">Mode Pengumpulan Dana</h3>
-              <p className="text-xs text-slate-400 mt-0.5">{formatDateShort(upcoming.meetingDate)} — {upcoming.meetingLocation || 'Balai RT'}</p>
+              <p className="text-xs text-slate-400 mt-0.5">Tarikan warga, setoran ronda, denda & lainnya</p>
             </div>
             <div className="text-right">
               <p className="text-xs text-slate-400">Terkumpul Hari Ini</p>
@@ -1399,31 +1503,26 @@ export function SelapananPage({ userId, familyId, isAdmin }: Props) {
         {/* Tabs */}
         <Tabs value={collectionTab} onValueChange={setCollectionTab}>
           <TabsList className="w-full flex h-auto flex-wrap gap-1 bg-slate-100 p-1 rounded-lg">
-            <TabsTrigger value="shortage" className="text-xs flex-1 min-w-0 data-[state=active]:bg-white data-[state=active]:shadow-sm rounded-md">
-              <AlertTriangle className="w-3.5 h-3.5 mr-1 text-amber-500" />
-              <span className="hidden sm:inline">Kurangan</span>
-              <span className="sm:hidden">Kurang</span>
+            <TabsTrigger value="tarikan" className="text-xs flex-1 min-w-0 data-[state=active]:bg-white data-[state=active]:shadow-sm rounded-md">
+              <HandCoins className="w-3.5 h-3.5 mr-1 text-amber-500" />
+              <span className="hidden sm:inline">Tarikan Warga</span>
+              <span className="sm:hidden">Tarikan</span>
             </TabsTrigger>
             <TabsTrigger value="ronda-group" className="text-xs flex-1 min-w-0 data-[state=active]:bg-white data-[state=active]:shadow-sm rounded-md">
               <Shield className="w-3.5 h-3.5 mr-1 text-slate-500" />
               <span className="hidden sm:inline">Setoran Ronda</span>
               <span className="sm:hidden">Ronda</span>
             </TabsTrigger>
-            <TabsTrigger value="monthly" className="text-xs flex-1 min-w-0 data-[state=active]:bg-white data-[state=active]:shadow-sm rounded-md">
-              <Wallet className="w-3.5 h-3.5 mr-1 text-slate-500" />
-              <span className="hidden sm:inline">Iuran Bulanan</span>
-              <span className="sm:hidden">Bulanan</span>
-            </TabsTrigger>
             <TabsTrigger value="ronda-levy-fine" className="text-xs flex-1 min-w-0 data-[state=active]:bg-white data-[state=active]:shadow-sm rounded-md">
               <Banknote className="w-3.5 h-3.5 mr-1 text-slate-500" />
-              <span className="hidden sm:inline">Ronda & Lainnya</span>
+              <span className="hidden sm:inline">Denda & Lainnya</span>
               <span className="sm:hidden">Lainnya</span>
             </TabsTrigger>
           </TabsList>
 
-          {/* Tab 1: Kurangan Jimpitan */}
-          <TabsContent value="shortage">
-            {renderShortageTab(recap)}
+          {/* Tab 1: Tarikan Warga */}
+          <TabsContent value="tarikan">
+            {renderTarikanWargaTab()}
           </TabsContent>
 
           {/* Tab 2: Setoran Ronda Grup */}
@@ -1431,12 +1530,7 @@ export function SelapananPage({ userId, familyId, isAdmin }: Props) {
             {renderRondaGroupTab(recap)}
           </TabsContent>
 
-          {/* Tab 3: Iuran Bulanan */}
-          <TabsContent value="monthly">
-            {renderMonthlyTab(recap)}
-          </TabsContent>
-
-          {/* Tab 4: Iuran Ronda & Lainnya */}
+          {/* Tab 3: Denda & Lainnya */}
           <TabsContent value="ronda-levy-fine">
             {renderRondaLevyFineTab(recap)}
           </TabsContent>
@@ -1480,155 +1574,244 @@ export function SelapananPage({ userId, familyId, isAdmin }: Props) {
   };
 
   // ----------------------------------------
-  // Tab 1: Kurangan Jimpitan
+  // Tab 1: Tarikan Warga (Consolidated Per-Family View)
   // ----------------------------------------
 
-  const renderShortageTab = (recap: RecapData) => {
-    const combined = recap.combinedShortages.filter(s => s.totalShortage > 0);
-
-    if (combined.length === 0) {
+  const renderTarikanWargaTab = () => {
+    if (loadingTarikan && !tarikanData) {
       return (
-        <div className="space-y-3">
-          <Card className="rounded-xl border shadow-sm">
-            <CardContent className="p-6 text-center">
-              <CheckCircle2 className="w-8 h-8 text-emerald-400 mx-auto mb-2" />
-              <p className="text-sm text-slate-500">Tidak ada kurangan jimpitan</p>
-            </CardContent>
-          </Card>
-          {/* Link to daily matrix */}
-          {upcoming && (
-            <Button
-              size="sm"
-              className="w-full h-10 bg-teal-600 hover:bg-teal-700 text-white text-xs"
-              onClick={() => { exitCollectionMode(); fetchDailyMatrix(upcoming.id); }}
-              disabled={loadingDailyMatrix}
-            >
-              {loadingDailyMatrix ? <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" /> : <Eye className="w-3.5 h-3.5 mr-1" />}
-              Lihat Rekap Harian 35 Hari
-            </Button>
-          )}
-        </div>
+        <Card className="rounded-xl border shadow-sm">
+          <CardContent className="p-8 text-center">
+            <Loader2 className="w-6 h-6 animate-spin text-slate-400 mx-auto mb-2" />
+            <p className="text-sm text-slate-500">Memuat data tarikan warga...</p>
+          </CardContent>
+        </Card>
       );
     }
 
-    const totalPrev = combined.reduce((s, c) => s + c.previousShortage, 0);
-    const totalCurr = combined.reduce((s, c) => s + c.currentShortage, 0);
-    const totalAll = combined.reduce((s, c) => s + c.totalShortage, 0);
+    if (!tarikanData) {
+      return (
+        <Card className="rounded-xl border shadow-sm">
+          <CardContent className="p-8 text-center">
+            <HandCoins className="w-8 h-8 text-slate-300 mx-auto mb-2" />
+            <p className="text-sm text-slate-500">Data tarikan belum dimuat</p>
+            <Button size="sm" className="mt-3 bg-slate-800 hover:bg-slate-700 text-white text-xs" onClick={() => upcoming && fetchTarikan(upcoming.id)}>
+              Muat Tarikan
+            </Button>
+          </CardContent>
+        </Card>
+      );
+    }
+
+    const { tarikan, totals, monthsSpanned } = tarikanData;
+
+    if (tarikan.length === 0) {
+      return (
+        <Card className="rounded-xl border shadow-sm">
+          <CardContent className="p-6 text-center">
+            <CheckCircle2 className="w-8 h-8 text-emerald-400 mx-auto mb-2" />
+            <p className="text-sm text-slate-500">Tidak ada data tarikan</p>
+          </CardContent>
+        </Card>
+      );
+    }
 
     return (
       <div className="space-y-3">
-        {/* Summary boxes */}
-        <div className="grid grid-cols-3 gap-3">
-          <div className="rounded-lg border bg-amber-50 p-3">
-            <p className="text-[10px] text-amber-600 font-medium uppercase">Kurangan Bulan Lalu</p>
-            <p className="text-sm font-bold text-amber-700">{formatCurrency(totalPrev)}</p>
-            <p className="text-[10px] text-amber-500">dari selapanan sebelumnya</p>
+        {/* Summary Cards */}
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
+          <div className="rounded-lg border bg-slate-50 p-2.5">
+            <p className="text-[9px] text-slate-500 font-medium uppercase">Total Harus Bayar</p>
+            <p className="text-sm font-bold text-slate-800">{formatCurrency(totals.totalHarusBayar)}</p>
           </div>
-          <div className="rounded-lg border bg-slate-50 p-3">
-            <p className="text-[10px] text-slate-500 font-medium uppercase">Kurangan Periode Ini</p>
-            <p className="text-sm font-bold text-slate-700">{formatCurrency(totalCurr)}</p>
-            <p className="text-[10px] text-slate-400">jimpitan belum lunas</p>
+          <div className="rounded-lg border bg-emerald-50 p-2.5">
+            <p className="text-[9px] text-emerald-600 font-medium uppercase">Sudah Dibayar</p>
+            <p className="text-sm font-bold text-emerald-700">{formatCurrency(totals.totalSudahBayar)}</p>
           </div>
-          <div className="rounded-lg border bg-red-50 p-3">
-            <p className="text-[10px] text-red-600 font-medium uppercase">Total Kurangan</p>
-            <p className="text-sm font-bold text-red-700">{formatCurrency(totalAll)}</p>
-            <p className="text-[10px] text-red-400">bulan lalu + periode ini</p>
+          <div className="rounded-lg border bg-red-50 p-2.5">
+            <p className="text-[9px] text-red-600 font-medium uppercase">Sisa Belum Bayar</p>
+            <p className="text-sm font-bold text-red-700">{formatCurrency(totals.totalSisaDepan)}</p>
+          </div>
+          <div className="rounded-lg border bg-amber-50 p-2.5">
+            <p className="text-[9px] text-amber-600 font-medium uppercase">KK Dengan Sisa</p>
+            <p className="text-sm font-bold text-amber-700">{totals.familiesWithSisa}/{totals.familiesTotal}</p>
+          </div>
+          <div className="rounded-lg border bg-sky-50 p-2.5">
+            <p className="text-[9px] text-sky-600 font-medium uppercase">Bulan Ditempuh</p>
+            <p className="text-sm font-bold text-sky-700">{monthsSpanned} bln</p>
           </div>
         </div>
 
-        {/* Combined shortage table */}
+        {/* Consolidated Family Table */}
         <div className="rounded-xl border bg-white shadow-sm overflow-hidden">
-          <div className="p-3 border-b bg-slate-50/50">
+          <div className="p-2.5 border-b bg-slate-50/50 flex items-center justify-between">
             <h3 className="text-xs font-semibold text-slate-700 flex items-center gap-1">
-              <AlertTriangle className="w-3.5 h-3.5 text-amber-500" />
-              Daftar Kurangan ({combined.length} warga)
+              <HandCoins className="w-3.5 h-3.5 text-amber-500" />
+              Tarikan Warga ({tarikan.length} KK)
             </h3>
+            <Button
+              size="sm"
+              variant="ghost"
+              className="h-7 text-[10px] text-slate-500 hover:text-slate-700"
+              onClick={() => upcoming && fetchTarikan(upcoming.id)}
+              disabled={loadingTarikan}
+            >
+              <Loader2 className={`w-3 h-3 mr-1 ${loadingTarikan ? 'animate-spin' : ''}`} />
+              Refresh
+            </Button>
           </div>
           <div className="overflow-x-auto">
-            <Table>
-              <TableHeader>
-                <TableRow className="bg-slate-50/50">
-                  <TableHead className="text-[11px] w-8 text-center">No</TableHead>
-                  <TableHead className="text-[11px]">KK</TableHead>
-                  <TableHead className="text-[11px] text-right">Bulan Lalu</TableHead>
-                  <TableHead className="text-[11px] text-right">Periode Ini</TableHead>
-                  <TableHead className="text-[11px] text-right">Total Kurang</TableHead>
-                  <TableHead className="text-[11px] text-right w-28">Bayar</TableHead>
-                  <TableHead className="text-[11px] text-center w-16">Catat</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {combined.map((s, idx) => {
-                  const key = `combined-${s.familyId}`;
-                  const inputVal = collectInputs[key] ?? String(s.totalShortage);
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="bg-slate-50/80 border-b">
+                  <th className="text-left p-2 font-semibold text-slate-600 w-8 text-center">No</th>
+                  <th className="text-left p-2 font-semibold text-slate-600 min-w-[100px]">Nama KK</th>
+                  <th className="text-right p-2 font-semibold text-slate-600 min-w-[70px]">Sisa</th>
+                  <th className="text-right p-2 font-semibold text-slate-600 min-w-[70px]">Jimpitan</th>
+                  <th className="text-right p-2 font-semibold text-slate-600 min-w-[70px]">Iuran Bulanan</th>
+                  <th className="text-right p-2 font-semibold text-slate-600 min-w-[65px]">Iuran Ronda</th>
+                  <th className="text-right p-2 font-semibold text-slate-600 min-w-[80px]">Total Bayar</th>
+                  <th className="text-right p-2 font-semibold text-slate-600 min-w-[75px]">Bayar</th>
+                  <th className="text-right p-2 font-semibold text-slate-600 min-w-[75px]">Sisa Depan</th>
+                  <th className="text-center p-2 font-semibold text-slate-600 w-14">Catat</th>
+                </tr>
+              </thead>
+              <tbody>
+                {tarikan.map((t, idx) => {
+                  const key = `tarikan-${t.familyId}`;
+                  const inputVal = collectInputs[key] ?? String(t.sisaDepan);
                   const inputNum = parseInt(inputVal.replace(/\D/g, '')) || 0;
                   const isSubmitting = submittingKey === key;
-                  const isSettled = s.totalShortage <= 0;
+                  const isLunas = t.jumlahBayar >= t.totalHarusBayar && t.totalHarusBayar > 0;
+                  const liveSisaDepan = t.totalHarusBayar - t.jumlahBayar - inputNum;
+                  const hasSisa = t.sisaDepan > 0;
+                  const noteVal = collectNotes[key] ?? '';
 
                   return (
-                    <TableRow key={key} className={isSettled ? 'bg-emerald-50/50' : ''}>
-                      <TableCell className="text-xs text-slate-400 text-center">{idx + 1}</TableCell>
-                      <TableCell className={`text-xs font-medium ${isSettled ? 'line-through text-slate-400' : ''}`}>
+                    <tr
+                      key={key}
+                      className={`border-b ${isLunas ? 'bg-emerald-50/50' : hasSisa ? 'bg-red-50/30' : idx % 2 === 0 ? 'bg-white' : 'bg-slate-50/30'}`}
+                    >
+                      <td className="p-2 text-slate-400 text-center">{idx + 1}</td>
+                      <td className="p-2 font-medium text-slate-800">
                         <div>
-                          {s.familyHead}
-                          {s.prevFromSelapanan && s.previousShortage > 0 && (
-                            <p className="text-[9px] text-amber-500 font-normal">dari selapanan ke-{s.prevFromSelapanan}</p>
+                          <span className="text-[11px]">{t.familyHead}</span>
+                          {isLunas && (
+                            <Badge className="ml-1 text-[8px] bg-emerald-100 text-emerald-700 px-1 py-0">✓ LUNAS</Badge>
+                          )}
+                          {t.jimpitanType === 'BULANAN' && t.rondaGroup && (
+                            <p className="text-[9px] text-slate-400 font-normal">{t.rondaGroup.name}</p>
+                          )}
+                          {t.jimpitanType === 'HARIAN' && t.rondaGroup && (
+                            <p className="text-[9px] text-slate-400 font-normal">{t.rondaGroup.name}</p>
                           )}
                         </div>
-                      </TableCell>
-                      <TableCell className="text-xs text-right">
-                        {s.previousShortage > 0 ? (
-                          <span className="text-amber-600 font-medium">{formatCurrency(s.previousShortage)}</span>
+                      </td>
+                      <td className="p-2 text-right">
+                        {t.sisaTarikan > 0 ? (
+                          <div>
+                            <span className="text-red-600 font-medium">{formatCurrency(t.sisaTarikan)}</span>
+                            {t.prevFromSelapanan && (
+                              <p className="text-[8px] text-red-400 font-normal">dari selapanan ke-{t.prevFromSelapanan}</p>
+                            )}
+                          </div>
                         ) : (
                           <span className="text-slate-300">-</span>
                         )}
-                      </TableCell>
-                      <TableCell className="text-xs text-right">
-                        {s.currentShortage > 0 ? (
-                          <span className="text-slate-600 font-medium">{formatCurrency(s.currentShortage)}</span>
+                      </td>
+                      <td className="p-2 text-right">
+                        {t.jimpitanType === 'HARIAN' && t.kuranganJimpitan > 0 ? (
+                          <span className="text-amber-600 font-medium">{formatCurrency(t.kuranganJimpitan)}</span>
                         ) : (
                           <span className="text-slate-300">-</span>
                         )}
-                      </TableCell>
-                      <TableCell className={`text-xs text-right font-bold ${isSettled ? 'text-emerald-600 line-through' : 'text-red-600'}`}>
-                        {formatCurrency(s.totalShortage)}
-                      </TableCell>
-                      <TableCell className="text-right">
+                      </td>
+                      <td className="p-2 text-right">
+                        {t.jimpitanType === 'BULANAN' && t.iuranBulanan > 0 ? (
+                          <div>
+                            <span className="text-slate-700 font-medium">{formatCurrency(t.iuranBulanan)}</span>
+                            <p className="text-[8px] text-slate-400 font-normal">×{t.monthsSpanned} bln</p>
+                          </div>
+                        ) : (
+                          <span className="text-slate-300">-</span>
+                        )}
+                      </td>
+                      <td className="p-2 text-right">
+                        {t.rondaStatus === 'BAYAR_IURAN' && t.iuranRonda > 0 ? (
+                          <span className="text-sky-600 font-medium">{formatCurrency(t.iuranRonda)}</span>
+                        ) : (
+                          <span className="text-slate-300">-</span>
+                        )}
+                      </td>
+                      <td className="p-2 text-right font-bold text-slate-800">
+                        {formatCurrency(t.totalHarusBayar)}
+                      </td>
+                      <td className="p-2 text-right">
                         <Input
                           type="text"
                           inputMode="numeric"
-                          className="h-8 text-xs w-full"
+                          className="h-7 text-[11px] w-full min-w-[70px]"
                           value={inputVal}
                           placeholder="0"
-                          disabled={isSettled || isSubmitting}
+                          disabled={isLunas || isSubmitting}
                           onChange={e => setCollectInputs(prev => ({ ...prev, [key]: e.target.value }))}
                           onFocus={() => {
                             if (!collectInputs[key]) {
-                              setCollectInputs(prev => ({ ...prev, [key]: String(s.totalShortage) }));
+                              setCollectInputs(prev => ({ ...prev, [key]: String(t.sisaDepan) }));
                             }
                           }}
                         />
-                      </TableCell>
-                      <TableCell className="text-center">
+                        {/* Collapsible notes input */}
+                        <Collapsible>
+                          <CollapsibleTrigger asChild>
+                            <button className="text-[9px] text-slate-400 hover:text-slate-600 mt-0.5 flex items-center gap-0.5">
+                              {noteVal ? <span className="text-amber-600">📝</span> : <span>📝 Catatan</span>}
+                            </button>
+                          </CollapsibleTrigger>
+                          <CollapsibleContent>
+                            <Input
+                              type="text"
+                              className="h-6 text-[10px] w-full mt-1"
+                              value={noteVal}
+                              placeholder="Catatan..."
+                              disabled={isLunas || isSubmitting}
+                              onChange={e => setCollectNotes(prev => ({ ...prev, [key]: e.target.value }))}
+                            />
+                          </CollapsibleContent>
+                        </Collapsible>
+                      </td>
+                      <td className={`p-2 text-right font-bold ${liveSisaDepan > 0 ? 'text-red-600' : liveSisaDepan === 0 ? 'text-emerald-600' : 'text-emerald-600'}`}>
+                        {liveSisaDepan > 0 ? formatCurrency(liveSisaDepan) : '✓'}
+                      </td>
+                      <td className="p-2 text-center">
                         <Button
                           size="sm"
-                          className="h-7 bg-slate-800 hover:bg-slate-700 text-white text-[10px] px-2"
-                          disabled={isSettled || isSubmitting || inputNum <= 0 || inputNum > s.totalShortage}
-                          onClick={() => handleCollect(key, {
-                            selapananId: upcoming!.id,
-                            type: 'shortage',
-                            familyId: s.familyId,
-                            amount: inputNum,
-                          })}
+                          className="h-6 bg-slate-800 hover:bg-slate-700 text-white text-[9px] px-1.5 min-w-[40px]"
+                          disabled={isLunas || isSubmitting || inputNum <= 0}
+                          onClick={() => handleCollectTarikan(key, t.familyId, inputNum, noteVal || undefined)}
                         >
                           {isSubmitting ? <Loader2 className="w-3 h-3 animate-spin" /> : 'Catat'}
                         </Button>
-                      </TableCell>
-                    </TableRow>
+                      </td>
+                    </tr>
                   );
                 })}
-              </TableBody>
-            </Table>
+              </tbody>
+              {/* Totals Row */}
+              <tfoot>
+                <tr className="bg-slate-100 border-t-2 border-slate-300 font-bold">
+                  <td className="p-2 text-slate-500" colSpan={2}>TOTAL</td>
+                  <td className="p-2 text-right text-red-600">{formatCurrency(totals.totalSisaTarikan)}</td>
+                  <td className="p-2 text-right text-amber-600">{formatCurrency(totals.totalKuranganJimpitan)}</td>
+                  <td className="p-2 text-right text-slate-700">{formatCurrency(totals.totalIuranBulanan)}</td>
+                  <td className="p-2 text-right text-sky-600">{formatCurrency(totals.totalIuranRonda)}</td>
+                  <td className="p-2 text-right text-slate-800">{formatCurrency(totals.totalHarusBayar)}</td>
+                  <td className="p-2 text-right text-emerald-700">{formatCurrency(totals.totalSudahBayar)}</td>
+                  <td className="p-2 text-right text-red-600">{formatCurrency(totals.totalSisaDepan)}</td>
+                  <td className="p-2"></td>
+                </tr>
+              </tfoot>
+            </table>
           </div>
         </div>
 
@@ -1679,6 +1862,7 @@ export function SelapananPage({ userId, familyId, isAdmin }: Props) {
                 <TableHead className="text-[11px] text-right">Target</TableHead>
                 <TableHead className="text-[11px] text-right">Sudah Tercatat</TableHead>
                 <TableHead className="text-[11px] text-right w-28">Input Nominal</TableHead>
+                <TableHead className="text-[11px] w-28">Catatan</TableHead>
                 <TableHead className="text-[11px] text-center w-16">Catat</TableHead>
               </TableRow>
             </TableHeader>
@@ -1690,6 +1874,8 @@ export function SelapananPage({ userId, familyId, isAdmin }: Props) {
                 const inputNum = parseInt(inputVal.replace(/\D/g, '')) || 0;
                 const isSubmitting = submittingKey === key;
                 const isComplete = remaining <= 0;
+                const noteVal = collectNotes[key] ?? '';
+                const needsNotes = remaining > 0 && !noteVal.trim();
 
                 return (
                   <TableRow key={g.groupId} className={isComplete ? 'bg-emerald-50/50' : ''}>
@@ -1717,6 +1903,16 @@ export function SelapananPage({ userId, familyId, isAdmin }: Props) {
                         }}
                       />
                     </TableCell>
+                    <TableCell>
+                      <Input
+                        type="text"
+                        className={`h-8 text-xs w-full ${needsNotes ? 'border-amber-400 bg-amber-50 focus:border-amber-500' : ''}`}
+                        value={noteVal}
+                        placeholder={needsNotes ? 'Wajib isi...' : 'Catatan...'}
+                        disabled={isComplete || isSubmitting}
+                        onChange={e => setCollectNotes(prev => ({ ...prev, [key]: e.target.value }))}
+                      />
+                    </TableCell>
                     <TableCell className="text-center">
                       <Button
                         size="sm"
@@ -1727,6 +1923,7 @@ export function SelapananPage({ userId, familyId, isAdmin }: Props) {
                           type: 'ronda_group_setoran',
                           familyId: g.groupId,
                           amount: inputNum,
+                          notes: noteVal || undefined,
                         })}
                       >
                         {isSubmitting ? <Loader2 className="w-3 h-3 animate-spin" /> : 'Catat'}
@@ -1743,105 +1940,10 @@ export function SelapananPage({ userId, familyId, isAdmin }: Props) {
   };
 
   // ----------------------------------------
-  // Tab 3: Iuran Bulanan
-  // ----------------------------------------
-
-  const renderMonthlyTab = (recap: RecapData) => {
-    const payers = recap.monthlyPayers;
-
-    if (payers.length === 0) {
-      return (
-        <Card className="rounded-xl border shadow-sm">
-          <CardContent className="p-6 text-center">
-            <Wallet className="w-8 h-8 text-slate-300 mx-auto mb-2" />
-            <p className="text-sm text-slate-500">Tidak ada warga iuran bulanan</p>
-          </CardContent>
-        </Card>
-      );
-    }
-
-    return (
-      <div className="rounded-xl border bg-white shadow-sm overflow-hidden">
-        <div className="p-3 border-b bg-slate-50/50">
-          <h3 className="text-xs font-semibold text-slate-700 flex items-center gap-1">
-            <Wallet className="w-3.5 h-3.5" />
-            Iuran Bulanan ({payers.length} warga)
-          </h3>
-        </div>
-        <div className="overflow-x-auto">
-          <Table>
-            <TableHeader>
-              <TableRow className="bg-slate-50/50">
-                <TableHead className="text-[11px] w-8 text-center">No</TableHead>
-                <TableHead className="text-[11px]">KK</TableHead>
-                <TableHead className="text-[11px] text-right">Iuran/Bulan</TableHead>
-                <TableHead className="text-[11px] text-center">Bulan</TableHead>
-                <TableHead className="text-[11px] text-right">Total</TableHead>
-                <TableHead className="text-[11px] text-right w-28">Input Nominal</TableHead>
-                <TableHead className="text-[11px] text-center w-16">Catat</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {payers.map((m, idx) => {
-                const key = `monthly-${m.familyId}`;
-                const inputVal = collectInputs[key] ?? String(m.totalDue);
-                const inputNum = parseInt(inputVal.replace(/\D/g, '')) || 0;
-                const isSubmitting = submittingKey === key;
-
-                return (
-                  <TableRow key={m.familyId}>
-                    <TableCell className="text-xs text-slate-400 text-center">{idx + 1}</TableCell>
-                    <TableCell className="text-xs font-medium">{m.familyHead}</TableCell>
-                    <TableCell className="text-xs text-right">{formatCurrency(m.amount)}</TableCell>
-                    <TableCell className="text-xs text-center">{m.monthsSpanned}x</TableCell>
-                    <TableCell className="text-xs text-right font-medium">{formatCurrency(m.totalDue)}</TableCell>
-                    <TableCell className="text-right">
-                      <Input
-                        type="text"
-                        inputMode="numeric"
-                        className="h-8 text-xs w-full"
-                        value={inputVal}
-                        placeholder="0"
-                        disabled={isSubmitting}
-                        onChange={e => setCollectInputs(prev => ({ ...prev, [key]: e.target.value }))}
-                        onFocus={() => {
-                          if (!collectInputs[key]) {
-                            setCollectInputs(prev => ({ ...prev, [key]: String(m.totalDue) }));
-                          }
-                        }}
-                      />
-                    </TableCell>
-                    <TableCell className="text-center">
-                      <Button
-                        size="sm"
-                        className="h-7 bg-slate-800 hover:bg-slate-700 text-white text-[10px] px-2"
-                        disabled={isSubmitting || inputNum <= 0}
-                        onClick={() => handleCollect(key, {
-                          selapananId: upcoming!.id,
-                          type: 'monthly_iuran',
-                          familyId: m.familyId,
-                          amount: inputNum,
-                        })}
-                      >
-                        {isSubmitting ? <Loader2 className="w-3 h-3 animate-spin" /> : 'Catat'}
-                      </Button>
-                    </TableCell>
-                  </TableRow>
-                );
-              })}
-            </TableBody>
-          </Table>
-        </div>
-      </div>
-    );
-  };
-
-  // ----------------------------------------
-  // Tab 4: Iuran Ronda & Lainnya
+  // Tab 3: Denda & Lainnya
   // ----------------------------------------
 
   const renderRondaLevyFineTab = (recap: RecapData) => {
-    const rondaFees = recap.rondaFees;
     const allLevyItems = recap.customLevies.flatMap(l =>
       l.items.filter(i => i.status !== 'COMPLETED').map(i => ({
         ...i,
@@ -1853,83 +1955,7 @@ export function SelapananPage({ userId, familyId, isAdmin }: Props) {
 
     return (
       <div className="space-y-4">
-        {/* Section A: Iuran Ronda */}
-        <div className="rounded-xl border bg-white shadow-sm overflow-hidden">
-          <div className="p-3 border-b bg-slate-50/50">
-            <h3 className="text-xs font-semibold text-slate-700 flex items-center gap-1">
-              <Shield className="w-3.5 h-3.5" />
-              Iuran Ronda ({rondaFees.length} warga)
-            </h3>
-          </div>
-          {rondaFees.length === 0 ? (
-            <div className="p-4 text-center">
-              <p className="text-xs text-slate-400">Tidak ada warga bayar iuran ronda</p>
-            </div>
-          ) : (
-            <div className="overflow-x-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow className="bg-slate-50/50">
-                    <TableHead className="text-[11px] w-8 text-center">No</TableHead>
-                    <TableHead className="text-[11px]">KK</TableHead>
-                    <TableHead className="text-[11px] text-right">Iuran</TableHead>
-                    <TableHead className="text-[11px] text-right w-28">Input Nominal</TableHead>
-                    <TableHead className="text-[11px] text-center w-16">Catat</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {rondaFees.map((r, idx) => {
-                    const key = `ronda-${r.familyId}`;
-                    const inputVal = collectInputs[key] ?? String(r.rondaFee);
-                    const inputNum = parseInt(inputVal.replace(/\D/g, '')) || 0;
-                    const isSubmitting = submittingKey === key;
-
-                    return (
-                      <TableRow key={r.familyId}>
-                        <TableCell className="text-xs text-slate-400 text-center">{idx + 1}</TableCell>
-                        <TableCell className="text-xs font-medium">{r.familyHead}</TableCell>
-                        <TableCell className="text-xs text-right">{formatCurrency(r.rondaFee)}</TableCell>
-                        <TableCell className="text-right">
-                          <Input
-                            type="text"
-                            inputMode="numeric"
-                            className="h-8 text-xs w-full"
-                            value={inputVal}
-                            placeholder="0"
-                            disabled={isSubmitting}
-                            onChange={e => setCollectInputs(prev => ({ ...prev, [key]: e.target.value }))}
-                            onFocus={() => {
-                              if (!collectInputs[key]) {
-                                setCollectInputs(prev => ({ ...prev, [key]: String(r.rondaFee) }));
-                              }
-                            }}
-                          />
-                        </TableCell>
-                        <TableCell className="text-center">
-                          <Button
-                            size="sm"
-                            className="h-7 bg-slate-800 hover:bg-slate-700 text-white text-[10px] px-2"
-                            disabled={isSubmitting || inputNum <= 0}
-                            onClick={() => handleCollect(key, {
-                              selapananId: upcoming!.id,
-                              type: 'ronda_iuran',
-                              familyId: r.familyId,
-                              amount: inputNum,
-                            })}
-                          >
-                            {isSubmitting ? <Loader2 className="w-3 h-3 animate-spin" /> : 'Catat'}
-                          </Button>
-                        </TableCell>
-                      </TableRow>
-                    );
-                  })}
-                </TableBody>
-              </Table>
-            </div>
-          )}
-        </div>
-
-        {/* Section B: Tarikan Lain */}
+        {/* Section A: Tarikan Lain */}
         <div className="rounded-xl border bg-white shadow-sm overflow-hidden">
           <div className="p-3 border-b bg-slate-50/50">
             <h3 className="text-xs font-semibold text-slate-700 flex items-center gap-1">
@@ -2011,7 +2037,7 @@ export function SelapananPage({ userId, familyId, isAdmin }: Props) {
           )}
         </div>
 
-        {/* Section C: Denda */}
+        {/* Section B: Denda */}
         <div className="rounded-xl border bg-white shadow-sm overflow-hidden">
           <div className="p-3 border-b bg-slate-50/50">
             <h3 className="text-xs font-semibold text-slate-700 flex items-center gap-1">

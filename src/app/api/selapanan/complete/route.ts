@@ -362,6 +362,61 @@ export async function POST(request: NextRequest) {
     // They are linked to CustomLevyItem, not to a specific selapanan,
     // so they naturally carry forward. No additional action needed.
 
+    // =============================================
+    // CARRY OVER TARIKAN SISA DEPAN TO NEXT SELAPANAN
+    // =============================================
+    // Families with sisaDepan > 0 from SelapananTarikan need their
+    // unpaid amounts carried over as shortage to the next selapanan
+    const unpaidTarikan = await db.selapananTarikan.findMany({
+      where: {
+        selapananId,
+        sisaDepan: { gt: 0 },
+      },
+    });
+
+    let tarikanCarriedOverCount = 0;
+
+    if (unpaidTarikan.length > 0) {
+      // Find the next selapanan period (same as above, but re-query in case it wasn't found before)
+      let nextSelapanan = await db.selapanan.findFirst({
+        where: {
+          periodeStart: { gt: selapanan.periodeStart },
+          status: { not: 'CANCELLED' },
+        },
+        orderBy: { periodeStart: 'asc' },
+      });
+
+      if (nextSelapanan) {
+        for (const tarikan of unpaidTarikan) {
+          // Create or update JimpitanShortage in next selapanan
+          // The sisaDepan includes ALL unpaid amounts (jimpitan + bulanan + ronda fee + previous sisa)
+          await db.jimpitanShortage.upsert({
+            where: {
+              familyId_selapananId: {
+                familyId: tarikan.familyId,
+                selapananId: nextSelapanan!.id,
+              },
+            },
+            create: {
+              familyId: tarikan.familyId,
+              selapananId: nextSelapanan!.id,
+              totalShortage: tarikan.sisaDepan,
+              isSettled: false,
+              settledAmount: 0,
+              carriedOver: true,
+              notes: `Carry-over tarikan dari selapanan ke-${selapanan.number}: sisa Rp${tarikan.sisaDepan.toLocaleString('id-ID')}${tarikan.notes ? ` (${tarikan.notes})` : ''}`,
+            },
+            update: {
+              totalShortage: { increment: tarikan.sisaDepan },
+              carriedOver: true,
+            },
+          });
+
+          tarikanCarriedOverCount++;
+        }
+      }
+    }
+
     return NextResponse.json({
       message: `Selapanan ke-${selapanan.number} berhasil diselesaikan`,
       selapanan: updatedSelapanan,
@@ -377,6 +432,7 @@ export async function POST(request: NextRequest) {
       },
       transactionsCreated: transactions.length,
       shortagesCarriedOver: carriedOverCount,
+      tarikanCarriedOver: tarikanCarriedOverCount,
     });
   } catch (error) {
     console.error('Selapanan Complete POST error:', error);
