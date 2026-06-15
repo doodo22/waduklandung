@@ -73,17 +73,29 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // Get current period jimpitan shortage per family
+    // Calculate days elapsed from selapanan start to today
+    // Day 1 = periodeStart itself, so elapsedDays = diff_in_days + 1
+    const today = new Date().toISOString().split('T')[0];
+    const startDate = new Date(selapanan.periodeStart + 'T00:00:00');
+    const todayDate = new Date(today + 'T00:00:00');
+    const diffDays = Math.floor((todayDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24));
+    const elapsedDays = Math.min(35, Math.max(1, diffDays + 1));
+
+    // Get total paid per family from JimpitanLog
     const currentLogs = await db.jimpitanLog.findMany({
-      where: { selapananId },
-      select: { familyId: true, shortage: true },
+      where: { selapananId, family: { jimpitanType: 'HARIAN' } },
+      select: { familyId: true, paidAmount: true },
     });
 
-    const currentShortageMap = new Map<string, number>();
+    const paidMap = new Map<string, number>();
     for (const log of currentLogs) {
-      const existing = currentShortageMap.get(log.familyId) || 0;
-      currentShortageMap.set(log.familyId, existing + log.shortage);
+      const existing = paidMap.get(log.familyId) || 0;
+      paidMap.set(log.familyId, existing + log.paidAmount);
     }
+
+    // Get jimpitan amount from settings
+    const jimpitanSetting = await db.settings.findUnique({ where: { key: 'jimpitan_amount' } });
+    const jimpitanAmount = jimpitanSetting ? parseInt(jimpitanSetting.value, 10) || 1000 : 1000;
 
     // Calculate months spanned for monthly payers
     const monthsSpanned = countMonthBoundaries(selapanan.periodeStart, selapanan.periodeEnd);
@@ -117,7 +129,8 @@ export async function GET(request: NextRequest) {
 
     for (const family of families) {
       const sisaTarikan = prevShortageMap.get(family.id)?.remaining || 0;
-      const kuranganJimpitan = family.jimpitanType === 'HARIAN' ? (currentShortageMap.get(family.id) || 0) : 0;
+      const totalPaid = paidMap.get(family.id) || 0;
+      const kuranganJimpitan = family.jimpitanType === 'HARIAN' ? Math.max(0, (elapsedDays * jimpitanAmount) - totalPaid) : 0;
       const iuranBulanan = family.jimpitanType === 'BULANAN' ? family.jimpitanAmount * monthsSpanned : 0;
       const iuranRonda = family.rondaStatus === 'BAYAR_IURAN' ? family.rondaFee : 0;
 
@@ -125,6 +138,8 @@ export async function GET(request: NextRequest) {
 
       // If tarikan record exists, use its payment data; otherwise create new
       if (existing) {
+        const totalHarusBayar = existing.sisaTarikan + kuranganJimpitan + existing.iuranBulanan + existing.iuranRonda;
+        const sisaDepan = totalHarusBayar - existing.jumlahBayar;
         tarikanRecords.push({
           id: existing.id,
           selapananId: existing.selapananId,
@@ -135,12 +150,12 @@ export async function GET(request: NextRequest) {
           rondaGroup: family.rondaGroup ? { id: family.rondaGroup.id, name: family.rondaGroup.name } : null,
           monthsSpanned,
           sisaTarikan: existing.sisaTarikan,
-          kuranganJimpitan: existing.kuranganJimpitan,
+          kuranganJimpitan,
           iuranBulanan: existing.iuranBulanan,
           iuranRonda: existing.iuranRonda,
-          totalHarusBayar: existing.sisaTarikan + existing.kuranganJimpitan + existing.iuranBulanan + existing.iuranRonda,
+          totalHarusBayar,
           jumlahBayar: existing.jumlahBayar,
-          sisaDepan: existing.sisaDepan,
+          sisaDepan,
           notes: existing.notes,
           prevFromSelapanan: prevShortageMap.get(family.id)?.fromSelapanan || null,
         });
@@ -179,7 +194,7 @@ export async function GET(request: NextRequest) {
       totalHarusBayar: tarikanRecords.reduce((s, t) => s + t.totalHarusBayar, 0),
       totalSudahBayar: tarikanRecords.reduce((s, t) => s + t.jumlahBayar, 0),
       totalSisaDepan: tarikanRecords.reduce((s, t) => s + t.sisaDepan, 0),
-      familiesWithSisa: tarikanRecords.filter(t => t.sisaTarikan > 0).length,
+      familiesWithSisa: tarikanRecords.filter(t => t.sisaDepan > 0).length,
       familiesTotal: tarikanRecords.length,
     };
 
@@ -192,6 +207,8 @@ export async function GET(request: NextRequest) {
         meetingDate: selapanan.meetingDate,
       },
       monthsSpanned,
+      daysElapsed: elapsedDays,
+      jimpitanAmount,
       tarikan: tarikanRecords,
       totals,
       prevRondaNotes: prevRondaNotes.map(n => ({ description: n.description, amount: n.amount, date: n.date })),
@@ -249,28 +266,50 @@ export async function POST(request: NextRequest) {
       prevShortageMap.set(s.familyId, existing + (s.totalShortage - s.settledAmount));
     }
 
-    // Get current period jimpitan shortage per family
+    // Calculate days elapsed from selapanan start to today
+    // Day 1 = periodeStart itself, so elapsedDays = diff_in_days + 1
+    const today = new Date().toISOString().split('T')[0];
+    const startDate = new Date(selapanan.periodeStart + 'T00:00:00');
+    const todayDate = new Date(today + 'T00:00:00');
+    const diffDays = Math.floor((todayDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24));
+    const elapsedDays = Math.min(35, Math.max(1, diffDays + 1));
+
+    // Get total paid per family from JimpitanLog
     const currentLogs = await db.jimpitanLog.findMany({
-      where: { selapananId },
-      select: { familyId: true, shortage: true },
+      where: { selapananId, family: { jimpitanType: 'HARIAN' } },
+      select: { familyId: true, paidAmount: true },
     });
 
-    const currentShortageMap = new Map<string, number>();
+    const paidMap = new Map<string, number>();
     for (const log of currentLogs) {
-      const existing = currentShortageMap.get(log.familyId) || 0;
-      currentShortageMap.set(log.familyId, existing + log.shortage);
+      const existing = paidMap.get(log.familyId) || 0;
+      paidMap.set(log.familyId, existing + log.paidAmount);
     }
 
+    // Get jimpitan amount from settings
+    const jimpitanSetting = await db.settings.findUnique({ where: { key: 'jimpitan_amount' } });
+    const jimpitanAmount = jimpitanSetting ? parseInt(jimpitanSetting.value, 10) || 1000 : 1000;
+
     const monthsSpanned = countMonthBoundaries(selapanan.periodeStart, selapanan.periodeEnd);
+
+    // Get existing tarikan records for this selapanan
+    const existingTarikan = await db.selapananTarikan.findMany({
+      where: { selapananId },
+      select: { familyId: true, jumlahBayar: true },
+    });
+    const existingTarikanMap = new Map(existingTarikan.map(t => [t.familyId, t.jumlahBayar]));
 
     // Upsert tarikan records
     let upserted = 0;
     for (const family of families) {
       const sisaTarikan = prevShortageMap.get(family.id) || 0;
-      const kuranganJimpitan = family.jimpitanType === 'HARIAN' ? (currentShortageMap.get(family.id) || 0) : 0;
+      const totalPaid = paidMap.get(family.id) || 0;
+      const kuranganJimpitan = family.jimpitanType === 'HARIAN' ? Math.max(0, (elapsedDays * jimpitanAmount) - totalPaid) : 0;
       const iuranBulanan = family.jimpitanType === 'BULANAN' ? family.jimpitanAmount * monthsSpanned : 0;
       const iuranRonda = family.rondaStatus === 'BAYAR_IURAN' ? family.rondaFee : 0;
       const totalHarusBayar = sisaTarikan + kuranganJimpitan + iuranBulanan + iuranRonda;
+      const existingJumlahBayar = existingTarikanMap.get(family.id) ?? 0;
+      const sisaDepan = totalHarusBayar - existingJumlahBayar;
 
       await db.selapananTarikan.upsert({
         where: { selapananId_familyId: { selapananId, familyId: family.id } },
@@ -289,7 +328,8 @@ export async function POST(request: NextRequest) {
           kuranganJimpitan,
           iuranBulanan,
           iuranRonda,
-          // Don't overwrite jumlahBayar and sisaDepan if already recorded
+          sisaDepan,
+          // Don't overwrite jumlahBayar if already recorded
         },
       });
       upserted++;
@@ -298,6 +338,8 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       message: `Tarikan berhasil digenerate untuk ${upserted} KK`,
       count: upserted,
+      daysElapsed: elapsedDays,
+      jimpitanAmount,
     });
   } catch (error) {
     console.error('Selapanan Tarikan POST error:', error);

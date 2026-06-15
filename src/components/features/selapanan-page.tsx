@@ -194,6 +194,8 @@ export function SelapananPage({ userId, familyId, isAdmin }: Props) {
   const [tarikanData, setTarikanData] = useState<{
     selapanan: { id: string; number: number; periodeStart: string; periodeEnd: string; meetingDate: string };
     monthsSpanned: number;
+    daysElapsed: number;
+    jimpitanAmount: number;
     tarikan: {
       id: string | null;
       selapananId: string;
@@ -227,6 +229,7 @@ export function SelapananPage({ userId, familyId, isAdmin }: Props) {
     prevRondaNotes: { description: string; amount: number; date: string }[];
   } | null>(null);
   const [loadingTarikan, setLoadingTarikan] = useState(false);
+  const [autoRecapLoading, setAutoRecapLoading] = useState(false);
 
   // Daily matrix state
   const [showDailyMatrix, setShowDailyMatrix] = useState(false);
@@ -385,6 +388,27 @@ export function SelapananPage({ userId, familyId, isAdmin }: Props) {
       setLoadingTarikan(false);
     }
   }, []);
+
+  const handleAutoRecap = async () => {
+    if (!upcoming) return;
+    setAutoRecapLoading(true);
+    try {
+      const res = await api.post('/jimpitan/auto-recap', { selapananId: upcoming.id });
+      if (res.ok) {
+        const data = await res.json();
+        toast.success(data.message);
+        // Refresh tarikan data to reflect new kurangan
+        await fetchTarikan(upcoming.id);
+      } else {
+        const data = await res.json().catch(() => ({}));
+        toast.error(data.error || 'Gagal generate auto-recap');
+      }
+    } catch {
+      toast.error('Terjadi kesalahan');
+    } finally {
+      setAutoRecapLoading(false);
+    }
+  };
 
   const handleCollectTarikan = async (key: string, familyId: string, amount: number, notes?: string) => {
     setSubmittingKey(key);
@@ -1496,6 +1520,16 @@ export function SelapananPage({ userId, familyId, isAdmin }: Props) {
             <div className="text-right">
               <p className="text-xs text-slate-400">Terkumpul Hari Ini</p>
               <p className="text-xl font-bold text-emerald-400">{formatCurrency(sessionCollected)}</p>
+              <Button
+                size="sm"
+                variant="ghost"
+                className="h-6 text-[9px] text-slate-300 hover:text-white hover:bg-slate-700 mt-1"
+                onClick={handleAutoRecap}
+                disabled={autoRecapLoading}
+              >
+                <Loader2 className={`w-3 h-3 mr-1 ${autoRecapLoading ? 'animate-spin' : ''}`} />
+                Rekap Harian
+              </Button>
             </div>
           </div>
         </div>
@@ -1616,10 +1650,12 @@ export function SelapananPage({ userId, familyId, isAdmin }: Props) {
       );
     }
 
+    const { daysElapsed = 0, jimpitanAmount = 1000 } = tarikanData;
+
     return (
       <div className="space-y-3">
         {/* Summary Cards */}
-        <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
+        <div className="grid grid-cols-2 md:grid-cols-6 gap-2">
           <div className="rounded-lg border bg-slate-50 p-2.5">
             <p className="text-[9px] text-slate-500 font-medium uppercase">Total Harus Bayar</p>
             <p className="text-sm font-bold text-slate-800">{formatCurrency(totals.totalHarusBayar)}</p>
@@ -1637,8 +1673,13 @@ export function SelapananPage({ userId, familyId, isAdmin }: Props) {
             <p className="text-sm font-bold text-amber-700">{totals.familiesWithSisa}/{totals.familiesTotal}</p>
           </div>
           <div className="rounded-lg border bg-sky-50 p-2.5">
-            <p className="text-[9px] text-sky-600 font-medium uppercase">Bulan Ditempuh</p>
-            <p className="text-sm font-bold text-sky-700">{monthsSpanned} bln</p>
+            <p className="text-[9px] text-sky-600 font-medium uppercase">Hari Ke / 35</p>
+            <p className="text-sm font-bold text-sky-700">{daysElapsed}/35</p>
+            <p className="text-[8px] text-sky-400">{formatCurrency(jimpitanAmount)}/hari</p>
+          </div>
+          <div className="rounded-lg border bg-violet-50 p-2.5">
+            <p className="text-[9px] text-violet-600 font-medium uppercase">Bulan Ditempuh</p>
+            <p className="text-sm font-bold text-violet-700">{monthsSpanned} bln</p>
           </div>
         </div>
 
@@ -1666,13 +1707,13 @@ export function SelapananPage({ userId, familyId, isAdmin }: Props) {
                 <tr className="bg-slate-50/80 border-b">
                   <th className="text-left p-2 font-semibold text-slate-600 w-8 text-center">No</th>
                   <th className="text-left p-2 font-semibold text-slate-600 min-w-[100px]">Nama KK</th>
-                  <th className="text-right p-2 font-semibold text-slate-600 min-w-[70px]">Sisa</th>
-                  <th className="text-right p-2 font-semibold text-slate-600 min-w-[70px]">Jimpitan</th>
+                  <th className="text-right p-2 font-semibold text-red-600 min-w-[70px]">Sisa</th>
+                  <th className="text-right p-2 font-semibold text-amber-600 min-w-[70px]">Jimpitan</th>
                   <th className="text-right p-2 font-semibold text-slate-600 min-w-[70px]">Iuran Bulanan</th>
                   <th className="text-right p-2 font-semibold text-slate-600 min-w-[65px]">Iuran Ronda</th>
-                  <th className="text-right p-2 font-semibold text-slate-600 min-w-[80px]">Total Bayar</th>
-                  <th className="text-right p-2 font-semibold text-slate-600 min-w-[75px]">Bayar</th>
-                  <th className="text-right p-2 font-semibold text-slate-600 min-w-[75px]">Sisa Depan</th>
+                  <th className="text-right p-2 font-semibold text-slate-800 min-w-[80px]">Total Bayar</th>
+                  <th className="text-right p-2 font-semibold text-emerald-600 min-w-[75px]">Bayar</th>
+                  <th className="text-right p-2 font-semibold text-red-600 min-w-[75px]">Sisa Depan</th>
                   <th className="text-center p-2 font-semibold text-slate-600 w-14">Catat</th>
                 </tr>
               </thead>
@@ -1721,7 +1762,12 @@ export function SelapananPage({ userId, familyId, isAdmin }: Props) {
                       </td>
                       <td className="p-2 text-right">
                         {t.jimpitanType === 'HARIAN' && t.kuranganJimpitan > 0 ? (
-                          <span className="text-amber-600 font-medium">{formatCurrency(t.kuranganJimpitan)}</span>
+                          <div>
+                            <span className="text-amber-600 font-medium">{formatCurrency(t.kuranganJimpitan)}</span>
+                            <p className="text-[8px] text-amber-400 font-normal">{daysElapsed}×{formatCurrency(jimpitanAmount)}</p>
+                          </div>
+                        ) : t.jimpitanType === 'HARIAN' ? (
+                          <span className="text-emerald-500 text-[10px]">✓ Lunas</span>
                         ) : (
                           <span className="text-slate-300">-</span>
                         )}
