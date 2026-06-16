@@ -67,6 +67,8 @@ import {
   Hash,
   X,
   AlertCircle,
+  FileDown,
+  Loader2,
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -240,6 +242,40 @@ export function WargaPage({ userId, familyId, isAdmin }: { userId: string; famil
   const [deletingMember, setDeletingMember] = useState<FamilyMember | null>(null);
   const [deletingFamily, setDeletingFamily] = useState<Family | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [exportingPdf, setExportingPdf] = useState(false);
+
+  // ----------------------------------------
+  // Export PDF
+  // ----------------------------------------
+
+  const handleExportPdf = async () => {
+    setExportingPdf(true);
+    try {
+      const token = localStorage.getItem('auth_token');
+      const res = await fetch('/api/warga/export-pdf', {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+      if (res.ok) {
+        const blob = await res.blob();
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `Data_Warga_RT_Waduk_Landung_${new Date().toISOString().split('T')[0]}.pdf`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        window.URL.revokeObjectURL(url);
+        toast.success('PDF Data Warga berhasil diunduh');
+      } else {
+        const data = await res.json().catch(() => ({}));
+        toast.error(data.error || 'Gagal mengekspor PDF');
+      }
+    } catch {
+      toast.error('Terjadi kesalahan saat mengekspor PDF');
+    } finally {
+      setExportingPdf(false);
+    }
+  };
 
   // ----------------------------------------
   // Data Fetching
@@ -836,14 +872,26 @@ export function WargaPage({ userId, familyId, isAdmin }: { userId: string; famil
           </span>
         </div>
         {isAdmin && (
-          <Button
-            size="sm"
-            className="h-9 bg-slate-800 hover:bg-slate-700 text-white text-xs"
-            onClick={openAddFamilyDialog}
-          >
-            <Plus className="w-4 h-4 mr-1" />
-            Tambah KK
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-9 text-xs border-slate-300"
+              onClick={handleExportPdf}
+              disabled={exportingPdf}
+            >
+              {exportingPdf ? <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" /> : <FileDown className="w-3.5 h-3.5 mr-1" />}
+              Export PDF
+            </Button>
+            <Button
+              size="sm"
+              className="h-9 bg-slate-800 hover:bg-slate-700 text-white text-xs"
+              onClick={openAddFamilyDialog}
+            >
+              <Plus className="w-4 h-4 mr-1" />
+              Tambah KK
+            </Button>
+          </div>
         )}
       </div>
 
