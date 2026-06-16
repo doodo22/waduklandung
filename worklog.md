@@ -54,3 +54,31 @@ Stage Summary:
 - PDF downloads successfully with proper filename: Rekap_Selapanan_{number}_{date}.pdf
 - All lint checks pass (0 errors)
 - No runtime errors in dev server
+
+---
+Task ID: 2
+Agent: Main
+Task: Split PDF export into separate Selapanan and Data Warga files
+
+Work Log:
+- Created separate API route `/api/warga/export-pdf/route.ts` with:
+  - Section A: Daftar Kepala Keluarga (7 columns: No, Nama KK, Alamat, Jimpitan, Status Ronda, Grup Ronda, Jml Jiwa)
+  - Section B: Daftar Anggota Keluarga (9 columns: No, Nama Lengkap, L/P, Hubungan, Status Kawin, TTL, Pendidikan, Pekerjaan, NIK)
+  - Family header rows styled with blue background and bold text
+  - Kepala Keluarga members highlighted with bold in Hubungan column
+  - Full label translations for relationship, gender, marital status, education
+  - Signature area and page numbers
+- Removed Section C (Data Warga) from `/api/selapanan/export-pdf/route.ts` - now only contains Section A (Rekap Tarikan Warga) and Section B (Rekap Mingguan Jimpitan)
+- Added `exportingWargaPdf` state and `handleExportWargaPdf` handler to selapanan-page.tsx
+- Updated admin action buttons: renamed "Export PDF" → "Rekap Selapanan" and added "Data Warga" button (Users icon)
+- Updated collection mode bottom bar: renamed "PDF" → "Rekap" and added "Warga" button (Users icon)
+- Tested both APIs: Selapanan PDF = 14KB (2 pages), Warga PDF = 20KB (4 pages with family members)
+- Verified buttons visible via Agent Browser
+- All lint checks pass (0 errors)
+
+Stage Summary:
+- Two separate PDF exports now available:
+  1. Rekap Selapanan: `/api/selapanan/export-pdf?selapananId=xxx` → 14KB, 2 pages
+  2. Data Warga: `/api/warga/export-pdf` → 20KB, 4 pages (includes anggota keluarga detail)
+- Data Warga PDF includes full family member demographics: NIK, gender, relationship, marital status, TTL, education, occupation
+- Both buttons visible and working in admin view

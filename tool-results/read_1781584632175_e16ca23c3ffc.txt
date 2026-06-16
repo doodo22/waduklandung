@@ -1,0 +1,2002 @@
+     1→'use client';
+     2→
+     3→import { useState, useEffect, useCallback } from 'react';
+     4→import { api } from '@/lib/api-client';
+     5→import {
+     6→  formatCurrency,
+     7→  formatDateShort,
+     8→  SELAPANAN_STATUS_LABELS,
+     9→  JIMPITAN_TYPE_LABELS,
+    10→  LEVY_ITEM_STATUS_LABELS,
+    11→} from '@/lib/constants';
+    12→import { Card, CardContent } from '@/components/ui/card';
+    13→import { Button } from '@/components/ui/button';
+    14→import { Badge } from '@/components/ui/badge';
+    15→import { Input } from '@/components/ui/input';
+    16→import { Label } from '@/components/ui/label';
+    17→import { Textarea } from '@/components/ui/textarea';
+    18→import {
+    19→  Dialog,
+    20→  DialogContent,
+    21→  DialogHeader,
+    22→  DialogTitle,
+    23→  DialogFooter,
+    24→  DialogDescription,
+    25→} from '@/components/ui/dialog';
+    26→import {
+    27→  Select,
+    28→  SelectContent,
+    29→  SelectItem,
+    30→  SelectTrigger,
+    31→  SelectValue,
+    32→} from '@/components/ui/select';
+    33→import {
+    34→  Table,
+    35→  TableBody,
+    36→  TableCell,
+    37→  TableHead,
+    38→  TableHeader,
+    39→  TableRow,
+    40→} from '@/components/ui/table';
+    41→import {
+    42→  Collapsible,
+    43→  CollapsibleContent,
+    44→  CollapsibleTrigger,
+    45→} from '@/components/ui/collapsible';
+    46→import {
+    47→  Tabs,
+    48→  TabsContent,
+    49→  TabsList,
+    50→  TabsTrigger,
+    51→} from '@/components/ui/tabs';
+    52→import {
+    53→  Calendar,
+    54→  Plus,
+    55→  MapPin,
+    56→  ChevronDown,
+    57→  ChevronRight,
+    58→  Wallet,
+    59→  Clock,
+    60→  CheckCircle2,
+    61→  AlertTriangle,
+    62→  Users,
+    63→  Shield,
+    64→  FileText,
+    65→  X,
+    66→  Hash,
+    67→  ArrowRight,
+    68→  Loader2,
+    69→  HandCoins,
+    70→  Banknote,
+    71→  BookOpen,
+    72→  CircleDollarSign,
+    73→  ArrowLeft,
+    74→  Eye,
+    75→  TrendingUp,
+    76→  FileDown,
+    77→} from 'lucide-react';
+    78→import { toast } from 'sonner';
+    79→
+    80→// ============================================
+    81→// TYPES
+    82→// ============================================
+    83→
+    84→interface SelapananDetail {
+    85→  id: string;
+    86→  selapananId: string;
+    87→  agenda: string;
+    88→  decisions: string | null;
+    89→  notes: string | null;
+    90→}
+    91→
+    92→interface Selapanan {
+    93→  id: string;
+    94→  number: number;
+    95→  periodeStart: string;
+    96→  periodeEnd: string;
+    97→  meetingDate: string;
+    98→  meetingLocation: string | null;
+    99→  status: string;
+   100→  jimpitanDaily: number;
+   101→  jimpitanMonthly: number;
+   102→  rondaFeeTotal: number;
+   103→  shortagePaid: number;
+   104→  finePaid: number;
+   105→  levyPaid: number;
+   106→  otherIncome: number;
+   107→  totalIncome: number;
+   108→  notes: string | null;
+   109→  details: SelapananDetail[];
+   110→  createdAt: string;
+   111→  updatedAt: string;
+   112→}
+   113→
+   114→interface CombinedShortage {
+   115→  familyId: string;
+   116→  familyHead: string;
+   117→  previousShortage: number;
+   118→  currentShortage: number;
+   119→  totalShortage: number;
+   120→  prevFromSelapanan: number | null;
+   121→}
+   122→
+   123→interface RecapData {
+   124→  selapanan: Selapanan | null;
+   125→  jimpitanByGroup: { groupId: string; groupName: string; totalExpected: number; totalPaid: number; totalShortage: number; nightsCollected: number }[];
+   126→  monthlyPayers: { familyId: string; familyHead: string; amount: number; monthsSpanned: number; totalDue: number }[];
+   127→  rondaFees: { familyId: string; familyHead: string; rondaFee: number }[];
+   128→  previousShortages: { familyId: string; familyHead: string; totalShortage: number; isSettled: boolean }[];
+   129→  currentShortages: { familyId: string; familyHead: string; totalShortage: number }[];
+   130→  combinedShortages: CombinedShortage[];
+   131→  totalCombinedShortage: number;
+   132→  customLevies: { id: string; name: string; items: { familyId: string; familyHead: string; totalAmount: number; installments: number; paidAmount: number; nextInstallment: number; status: string; id?: string; remaining?: number }[] }[];
+   133→  fines: { id: string; familyHead: string; type: string; amount: number; reason: string; status: string }[];
+   134→  totalExpected: number;
+   135→  totalCollected: number;
+   136→  totalOutstanding: number;
+   137→  monthsSpanned: number;
+   138→  daysInPeriod: number;
+   139→  daysElapsed: number;
+   140→  daysRemaining: number;
+   141→}
+   142→
+   143→interface Props {
+   144→  userId: string;
+   145→  familyId: string | null;
+   146→  isAdmin: boolean;
+   147→}
+   148→
+   149→const STATUS_COLORS: Record<string, string> = {
+   150→  UPCOMING: 'bg-amber-100 text-amber-700',
+   151→  COMPLETED: 'bg-emerald-100 text-emerald-700',
+   152→  CANCELLED: 'bg-red-100 text-red-700',
+   153→};
+   154→
+   155→// ============================================
+   156→// COMPONENT
+   157→// ============================================
+   158→
+   159→export function SelapananPage({ userId, familyId, isAdmin }: Props) {
+   160→  const [selapananList, setSelapananList] = useState<Selapanan[]>([]);
+   161→  const [loading, setLoading] = useState(true);
+   162→  const [recapMap, setRecapMap] = useState<Record<string, RecapData>>({});
+   163→  const [loadingRecapId, setLoadingRecapId] = useState<string | null>(null);
+   164→
+   165→  // Expanded state
+   166→  const [expandedId, setExpandedId] = useState<string | null>(null);
+   167→
+   168→  // Create dialog
+   169→  const [createOpen, setCreateOpen] = useState(false);
+   170→  const [form, setForm] = useState({
+   171→    number: 0,
+   172→    periodeStart: '',
+   173→    periodeEnd: '',
+   174→    meetingDate: '',
+   175→    meetingLocation: '',
+   176→    notes: '',
+   177→  });
+   178→  const [agendaItems, setAgendaItems] = useState([{ agenda: '', decisions: '', notes: '' }]);
+   179→  const [saving, setSaving] = useState(false);
+   180→
+   181→  // Complete dialog
+   182→  const [completeOpen, setCompleteOpen] = useState(false);
+   183→  const [completingId, setCompletingId] = useState<string | null>(null);
+   184→  const [completing, setCompleting] = useState(false);
+   185→
+   186→  // Collection mode state
+   187→  const [collectionMode, setCollectionMode] = useState(false);
+   188→  const [collectionTab, setCollectionTab] = useState('tarikan');
+   189→  const [collectInputs, setCollectInputs] = useState<Record<string, string>>({});
+   190→  const [collectNotes, setCollectNotes] = useState<Record<string, string>>({});
+   191→  const [submittingKey, setSubmittingKey] = useState<string | null>(null);
+   192→  const [sessionCollected, setSessionCollected] = useState(0);
+   193→
+   194→  // Tarikan warga state (consolidated per-family view)
+   195→  const [tarikanData, setTarikanData] = useState<{
+   196→    selapanan: { id: string; number: number; periodeStart: string; periodeEnd: string; meetingDate: string };
+   197→    monthsSpanned: number;
+   198→    daysElapsed: number;
+   199→    jimpitanAmount: number;
+   200→    tarikan: {
+   201→      id: string | null;
+   202→      selapananId: string;
+   203→      familyId: string;
+   204→      familyHead: string;
+   205→      jimpitanType: string;
+   206→      rondaStatus: string;
+   207→      rondaGroup: { id: string; name: string } | null;
+   208→      monthsSpanned: number;
+   209→      sisaTarikan: number;
+   210→      kuranganJimpitan: number;
+   211→      iuranBulanan: number;
+   212→      iuranRonda: number;
+   213→      totalHarusBayar: number;
+   214→      jumlahBayar: number;
+   215→      sisaDepan: number;
+   216→      notes: string | null;
+   217→      prevFromSelapanan: number | null;
+   218→    }[];
+   219→    totals: {
+   220→      totalSisaTarikan: number;
+   221→      totalKuranganJimpitan: number;
+   222→      totalIuranBulanan: number;
+   223→      totalIuranRonda: number;
+   224→      totalHarusBayar: number;
+   225→      totalSudahBayar: number;
+   226→      totalSisaDepan: number;
+   227→      familiesWithSisa: number;
+   228→      familiesTotal: number;
+   229→    };
+   230→    prevRondaNotes: { description: string; amount: number; date: string }[];
+   231→  } | null>(null);
+   232→  const [loadingTarikan, setLoadingTarikan] = useState(false);
+   233→  const [autoRecapLoading, setAutoRecapLoading] = useState(false);
+   234→
+   235→  // Daily matrix state
+   236→  const [showDailyMatrix, setShowDailyMatrix] = useState(false);
+   237→  const [dailyMatrixData, setDailyMatrixData] = useState<{
+   238→    selapanan: { id: string; number: number; periodeStart: string; periodeEnd: string; meetingDate: string; status: string };
+   239→    jimpitanAmount: number;
+   240→    dailyColumns: { date: string; dayOfWeek: number; dayName: string; nightLabel: string; weekNumber: number; dayInWeek: number; groupName: string | null; groupId: string | null }[];
+   241→    familyRows: {
+   242→      familyId: string;
+   243→      familyHead: string;
+   244→      rondaGroup: { id: string; name: string; dayOfWeek: number } | null;
+   245→      dailyData: Record<string, { paidAmount: number; shortage: number; expectedAmount: number; groupName: string | null }>;
+   246→      summary: { totalExpected: number; totalPaid: number; totalShortage: number; daysPaid: number; daysPartial: number; daysMissed: number; paymentRate: number };
+   247→    }[];
+   248→    overallSummary: { totalFamilies: number; totalDays: number; totalExpected: number; totalPaid: number; totalShortage: number; daysCollected: number; avgPaymentRate: number };
+   249→  } | null>(null);
+   250→  const [loadingDailyMatrix, setLoadingDailyMatrix] = useState(false);
+   251→  const [dailyMatrixWeek, setDailyMatrixWeek] = useState<number>(0); // 0 = all weeks
+   252→  const [exportingPdf, setExportingPdf] = useState(false);
+   253→  const [exportingWargaPdf, setExportingWargaPdf] = useState(false);
+   254→
+   255→  // ----------------------------------------
+   256→  // Data Fetching
+   257→  // ----------------------------------------
+   258→
+   259→  const fetchSelapanan = useCallback(async () => {
+   260→    setLoading(true);
+   261→    try {
+   262→      const res = await api.get('/selapanan');
+   263→      if (res.ok) {
+   264→        const data = await res.json();
+   265→        setSelapananList(data.selapanan || []);
+   266→      }
+   267→    } catch {
+   268→      toast.error('Gagal memuat data selapanan');
+   269→    } finally {
+   270→      setLoading(false);
+   271→    }
+   272→  }, []);
+   273→
+   274→  useEffect(() => {
+   275→    fetchSelapanan();
+   276→  }, [fetchSelapanan]);
+   277→
+   278→  const fetchRecap = useCallback(async (selapananId: string) => {
+   279→    setLoadingRecapId(selapananId);
+   280→    try {
+   281→      const res = await api.get(`/selapanan/recap?selapananId=${selapananId}`);
+   282→      if (res.ok) {
+   283→        const raw = await res.json();
+   284→        const r = raw.recap || {};
+   285→        const s = raw.selapanan || {};
+   286→        const daysDiff = s.periodeStart ? Math.ceil((Date.now() - new Date(s.periodeStart).getTime()) / (1000 * 60 * 60 * 24)) : 0;
+   287→        const daysRem = s.meetingDate ? Math.max(0, Math.ceil((new Date(s.meetingDate).getTime() - Date.now()) / (1000 * 60 * 60 * 24))) : 0;
+   288→
+   289→        const recap: RecapData = {
+   290→          selapanan: s,
+   291→          jimpitanByGroup: (r.dailyByGroup || []).map((g: Record<string, unknown>) => ({
+   292→            groupId: g.groupId as string,
+   293→            groupName: g.groupName as string,
+   294→            totalExpected: g.totalExpected as number,
+   295→            totalPaid: g.totalPaid as number,
+   296→            totalShortage: g.totalShortage as number,
+   297→            nightsCollected: (g.entries as unknown[])?.length || 0,
+   298→          })),
+   299→          monthlyPayers: (r.monthlyPayers || []).map((m: Record<string, unknown>) => ({
+   300→            familyId: m.familyId as string,
+   301→            familyHead: m.familyHead as string,
+   302→            amount: m.monthlyAmount as number,
+   303→            monthsSpanned: m.monthsSpanned as number,
+   304→            totalDue: m.totalExpected as number,
+   305→          })),
+   306→          rondaFees: (r.rondaFees || []).map((f: Record<string, unknown>) => ({
+   307→            familyId: f.familyId as string,
+   308→            familyHead: f.familyHead as string,
+   309→            rondaFee: f.totalExpected as number,
+   310→          })),
+   311→          previousShortages: (r.previousShortageItems || []).map((s: Record<string, unknown>) => ({
+   312→            familyId: s.familyId as string,
+   313→            familyHead: s.familyHead as string,
+   314→            totalShortage: s.remaining as number,
+   315→            isSettled: false,
+   316→          })),
+   317→          currentShortages: (r.currentShortages || []).map((s: Record<string, unknown>) => ({
+   318→            familyId: s.familyId as string,
+   319→            familyHead: s.familyHead as string,
+   320→            totalShortage: s.remaining as number,
+   321→          })),
+   322→          combinedShortages: (r.combinedShortages || []).map((s: Record<string, unknown>) => ({
+   323→            familyId: s.familyId as string,
+   324→            familyHead: s.familyHead as string,
+   325→            previousShortage: s.previousShortage as number,
+   326→            currentShortage: s.currentShortage as number,
+   327→            totalShortage: s.totalShortage as number,
+   328→            prevFromSelapanan: s.prevFromSelapanan as number | null,
+   329→          })),
+   330→          totalCombinedShortage: r.totalCombinedShortage || 0,
+   331→          customLevies: (r.leviesWithPayments || []).map((l: Record<string, unknown>) => ({
+   332→            id: l.id as string,
+   333→            name: l.name as string,
+   334→            items: ((l.items || []) as Record<string, unknown>[]).map((i: Record<string, unknown>) => ({
+   335→              familyId: i.familyId as string,
+   336→              familyHead: i.familyHead as string,
+   337→              totalAmount: i.totalAmount as number,
+   338→              installments: i.installments as number,
+   339→              paidAmount: i.paidAmount as number,
+   340→              nextInstallment: i.perInstallment as number,
+   341→              status: i.status as string,
+   342→              id: i.id as string | undefined,
+   343→              remaining: (i.totalAmount as number) - (i.paidAmount as number),
+   344→            })),
+   345→          })),
+   346→          fines: (r.finesSummary || []).map((f: Record<string, unknown>) => ({
+   347→            id: f.id as string,
+   348→            familyHead: f.familyHead as string,
+   349→            type: f.type as string,
+   350→            amount: f.amount as number,
+   351→            reason: f.reason as string,
+   352→            status: 'UNPAID' as string,
+   353→          })),
+   354→          totalExpected: r.totalExpectedIncome || 0,
+   355→          totalCollected: r.totalActualIncome || 0,
+   356→          totalOutstanding: r.totalCombinedShortage || (r.totalPreviousShortage || 0) + (r.totalCurrentShortage || 0),
+   357→          monthsSpanned: r.monthsSpanned || 1,
+   358→          daysInPeriod: 35,
+   359→          daysElapsed: Math.max(0, daysDiff),
+   360→          daysRemaining: daysRem,
+   361→        };
+   362→        setRecapMap(prev => ({ ...prev, [selapananId]: recap }));
+   363→      }
+   364→    } catch {
+   365→      toast.error('Gagal memuat rekap');
+   366→    } finally {
+   367→      setLoadingRecapId(null);
+   368→    }
+   369→  }, []);
+   370→
+   371→  // ----------------------------------------
+   372→  // Tarikan Warga
+   373→  // ----------------------------------------
+   374→
+   375→  const fetchTarikan = useCallback(async (selapananId: string) => {
+   376→    setLoadingTarikan(true);
+   377→    try {
+   378→      // First, generate the tarikan records
+   379→      await api.post('/selapanan/tarikan', { selapananId });
+   380→      // Then fetch them
+   381→      const res = await api.get(`/selapanan/tarikan?selapananId=${selapananId}`);
+   382→      if (res.ok) {
+   383→        const data = await res.json();
+   384→        setTarikanData(data);
+   385→      } else {
+   386→        toast.error('Gagal memuat data tarikan');
+   387→      }
+   388→    } catch {
+   389→      toast.error('Terjadi kesalahan');
+   390→    } finally {
+   391→      setLoadingTarikan(false);
+   392→    }
+   393→  }, []);
+   394→
+   395→  const handleAutoRecap = async () => {
+   396→    if (!upcoming) return;
+   397→    setAutoRecapLoading(true);
+   398→    try {
+   399→      const res = await api.post('/jimpitan/auto-recap', { selapananId: upcoming.id });
+   400→      if (res.ok) {
+   401→        const data = await res.json();
+   402→        toast.success(data.message);
+   403→        // Refresh tarikan data to reflect new kurangan
+   404→        await fetchTarikan(upcoming.id);
+   405→      } else {
+   406→        const data = await res.json().catch(() => ({}));
+   407→        toast.error(data.error || 'Gagal generate auto-recap');
+   408→      }
+   409→    } catch {
+   410→      toast.error('Terjadi kesalahan');
+   411→    } finally {
+   412→      setAutoRecapLoading(false);
+   413→    }
+   414→  };
+   415→
+   416→  const handleCollectTarikan = async (key: string, familyId: string, amount: number, notes?: string) => {
+   417→    setSubmittingKey(key);
+   418→    try {
+   419→      const res = await api.post('/selapanan/collect-tarikan', {
+   420→        selapananId: upcoming!.id,
+   421→        familyId,
+   422→        amount,
+   423→        notes: notes || undefined,
+   424→      });
+   425→      if (res.ok) {
+   426→        const data = await res.json();
+   427→        setSessionCollected(prev => prev + amount);
+   428→        toast.success(data.message);
+   429→        setCollectInputs(prev => {
+   430→          const next = { ...prev };
+   431→          delete next[key];
+   432→          return next;
+   433→        });
+   434→        setCollectNotes(prev => {
+   435→          const next = { ...prev };
+   436→          delete next[key];
+   437→          return next;
+   438→        });
+   439→        // Refresh tarikan data
+   440→        await fetchTarikan(upcoming!.id);
+   441→      } else {
+   442→        const data = await res.json().catch(() => ({}));
+   443→        toast.error(data.error || 'Gagal mencatat pembayaran');
+   444→      }
+   445→    } catch {
+   446→      toast.error('Terjadi kesalahan');
+   447→    } finally {
+   448→      setSubmittingKey(null);
+   449→    }
+   450→  };
+   451→
+   452→  // ----------------------------------------
+   453→  // Handlers
+   454→  // ----------------------------------------
+   455→
+   456→  const handleAutoGenerate = () => {
+   457→    const baseDate = new Date('2026-05-30');
+   458→    const baseNumber = 178;
+   459→    const nextNumber = (selapananList.length > 0 ? Math.max(...selapananList.map(s => s.number || 0)) : baseNumber) + 1;
+   460→
+   461→    const periodsAfterBase = nextNumber - baseNumber;
+   462→    const nextMeeting = new Date(baseDate);
+   463→    nextMeeting.setDate(nextMeeting.getDate() + (periodsAfterBase * 35));
+   464→
+   465→    const periodeStart = new Date(nextMeeting);
+   466→    periodeStart.setDate(periodeStart.getDate() - 34);
+   467→    const periodeEnd = new Date(nextMeeting);
+   468→
+   469→    setForm({
+   470→      number: nextNumber,
+   471→      periodeStart: formatDateISO(periodeStart),
+   472→      periodeEnd: formatDateISO(periodeEnd),
+   473→      meetingDate: formatDateISO(nextMeeting),
+   474→      meetingLocation: form.meetingLocation || 'Balai RT',
+   475→      notes: '',
+   476→    });
+   477→  };
+   478→
+   479→  const handleCreate = async () => {
+   480→    if (!form.periodeStart || !form.periodeEnd || !form.meetingDate || !form.number) {
+   481→      toast.error('Data tidak lengkap');
+   482→      return;
+   483→    }
+   484→    setSaving(true);
+   485→    try {
+   486→      const details = agendaItems
+   487→        .filter(a => a.agenda.trim())
+   488→        .map(a => ({ agenda: a.agenda, decisions: a.decisions || undefined, notes: a.notes || undefined }));
+   489→
+   490→      const res = await api.post('/selapanan', {
+   491→        number: form.number,
+   492→        periodeStart: form.periodeStart,
+   493→        periodeEnd: form.periodeEnd,
+   494→        meetingDate: form.meetingDate,
+   495→        meetingLocation: form.meetingLocation || null,
+   496→        notes: form.notes || null,
+   497→        details: details.length > 0 ? details : undefined,
+   498→      });
+   499→
+   500→      if (res.ok) {
+   501→        toast.success('Selapanan berhasil dibuat');
+   502→        setCreateOpen(false);
+   503→        fetchSelapanan();
+   504→      } else {
+   505→        toast.error('Gagal membuat selapanan');
+   506→      }
+   507→    } catch {
+   508→      toast.error('Terjadi kesalahan');
+   509→    } finally {
+   510→      setSaving(false);
+   511→    }
+   512→  };
+   513→
+   514→  const handleComplete = async () => {
+   515→    if (!completingId) return;
+   516→    setCompleting(true);
+   517→    try {
+   518→      const res = await api.post('/selapanan/complete', { selapananId: completingId });
+   519→      if (res.ok) {
+   520→        toast.success('Selapanan berhasil diselesaikan');
+   521→        setCompleteOpen(false);
+   522→        setCompletingId(null);
+   523→        setCollectionMode(false);
+   524→        setSessionCollected(0);
+   525→        fetchSelapanan();
+   526→      } else {
+   527→        const data = await res.json();
+   528→        toast.error(data.error || 'Gagal menyelesaikan selapanan');
+   529→      }
+   530→    } catch {
+   531→      toast.error('Terjadi kesalahan');
+   532→    } finally {
+   533→      setCompleting(false);
+   534→    }
+   535→  };
+   536→
+   537→  const handleCollect = async (key: string, payload: {
+   538→    selapananId: string;
+   539→    type: string;
+   540→    familyId?: string;
+   541→    amount?: number;
+   542→    fineId?: string;
+   543→    levyItemId?: string;
+   544→    notes?: string;
+   545→  }) => {
+   546→    setSubmittingKey(key);
+   547→    try {
+   548→      const res = await api.post('/selapanan/collect', payload);
+   549→      if (res.ok) {
+   550→        const amt = payload.amount || 0;
+   551→        setSessionCollected(prev => prev + amt);
+   552→        toast.success(`Berhasil mencatat ${formatCurrency(amt)}`);
+   553→        // Clear the input
+   554→        setCollectInputs(prev => {
+   555→          const next = { ...prev };
+   556→          delete next[key];
+   557→          return next;
+   558→        });
+   559→        // Refresh recap
+   560→        await fetchRecap(payload.selapananId);
+   561→      } else {
+   562→        const data = await res.json().catch(() => ({}));
+   563→        toast.error(data.error || 'Gagal mencatat pembayaran');
+   564→      }
+   565→    } catch {
+   566→      toast.error('Terjadi kesalahan');
+   567→    } finally {
+   568→      setSubmittingKey(null);
+   569→    }
+   570→  };
+   571→
+   572→  const toggleExpand = (selapanan: Selapanan) => {
+   573→    if (expandedId === selapanan.id) {
+   574→      setExpandedId(null);
+   575→    } else {
+   576→      setExpandedId(selapanan.id);
+   577→      if (!recapMap[selapanan.id] && selapanan.status === 'UPCOMING') {
+   578→        fetchRecap(selapanan.id);
+   579→      }
+   580→    }
+   581→  };
+   582→
+   583→  const enterCollectionMode = () => {
+   584→    const upcoming = selapananList.find(s => s.status === 'UPCOMING');
+   585→    if (upcoming) {
+   586→      if (!recapMap[upcoming.id]) {
+   587→        fetchRecap(upcoming.id);
+   588→      }
+   589→      fetchTarikan(upcoming.id);
+   590→    }
+   591→    setCollectionMode(true);
+   592→    setCollectionTab('tarikan');
+   593→    setCollectInputs({});
+   594→    setCollectNotes({});
+   595→    setSessionCollected(0);
+   596→  };
+   597→
+   598→  const exitCollectionMode = () => {
+   599→    setCollectionMode(false);
+   600→    setCollectInputs({});
+   601→    setCollectNotes({});
+   602→  };
+   603→
+   604→  // ----------------------------------------
+   605→  // Daily Matrix
+   606→  // ----------------------------------------
+   607→
+   608→  const fetchDailyMatrix = useCallback(async (selapananId: string) => {
+   609→    setLoadingDailyMatrix(true);
+   610→    try {
+   611→      const res = await api.get(`/jimpitan/selapanan-daily?selapananId=${selapananId}`);
+   612→      if (res.ok) {
+   613→        const data = await res.json();
+   614→        setDailyMatrixData(data);
+   615→        setShowDailyMatrix(true);
+   616→        setDailyMatrixWeek(0);
+   617→      } else {
+   618→        toast.error('Gagal memuat data rekap harian');
+   619→      }
+   620→    } catch {
+   621→      toast.error('Terjadi kesalahan');
+   622→    } finally {
+   623→      setLoadingDailyMatrix(false);
+   624→    }
+   625→  }, []);
+   626→
+   627→  const exitDailyMatrix = () => {
+   628→    setShowDailyMatrix(false);
+   629→    setDailyMatrixData(null);
+   630→    setDailyMatrixWeek(0);
+   631→  };
+   632→
+   633→  // ----------------------------------------
+   634→  // Export PDF
+   635→  // ----------------------------------------
+   636→
+   637→  const handleExportPdf = async () => {
+   638→    if (!upcoming) return;
+   639→    setExportingPdf(true);
+   640→    try {
+   641→      const token = localStorage.getItem('auth_token');
+   642→      const res = await fetch(`/api/selapanan/export-pdf?selapananId=${upcoming.id}`, {
+   643→        headers: token ? { Authorization: `Bearer ${token}` } : {},
+   644→      });
+   645→      if (res.ok) {
+   646→        const blob = await res.blob();
+   647→        const url = window.URL.createObjectURL(blob);
+   648→        const a = document.createElement('a');
+   649→        a.href = url;
+   650→        a.download = `Rekap_Selapanan_${upcoming.number}_${new Date().toISOString().split('T')[0]}.pdf`;
+   651→        document.body.appendChild(a);
+   652→        a.click();
+   653→        document.body.removeChild(a);
+   654→        window.URL.revokeObjectURL(url);
+   655→        toast.success('PDF Rekap Selapanan berhasil diunduh');
+   656→      } else {
+   657→        const data = await res.json().catch(() => ({}));
+   658→        toast.error(data.error || 'Gagal mengekspor PDF');
+   659→      }
+   660→    } catch {
+   661→      toast.error('Terjadi kesalahan saat mengekspor PDF');
+   662→    } finally {
+   663→      setExportingPdf(false);
+   664→    }
+   665→  };
+   666→
+   667→  const handleExportWargaPdf = async () => {
+   668→    setExportingWargaPdf(true);
+   669→    try {
+   670→      const token = localStorage.getItem('auth_token');
+   671→      const res = await fetch('/api/warga/export-pdf', {
+   672→        headers: token ? { Authorization: `Bearer ${token}` } : {},
+   673→      });
+   674→      if (res.ok) {
+   675→        const blob = await res.blob();
+   676→        const url = window.URL.createObjectURL(blob);
+   677→        const a = document.createElement('a');
+   678→        a.href = url;
+   679→        a.download = `Data_Warga_RT_Waduk_Landung_${new Date().toISOString().split('T')[0]}.pdf`;
+   680→        document.body.appendChild(a);
+   681→        a.click();
+   682→        document.body.removeChild(a);
+   683→        window.URL.revokeObjectURL(url);
+   684→        toast.success('PDF Data Warga berhasil diunduh');
+   685→      } else {
+   686→        const data = await res.json().catch(() => ({}));
+   687→        toast.error(data.error || 'Gagal mengekspor PDF');
+   688→      }
+   689→    } catch {
+   690→      toast.error('Terjadi kesalahan saat mengekspor PDF Data Warga');
+   691→    } finally {
+   692→      setExportingWargaPdf(false);
+   693→    }
+   694→  };
+   695→
+   696→  // ----------------------------------------
+   697→  // Render: Daily Matrix View (35-day × families)
+   698→  // ----------------------------------------
+   699→
+   700→  const renderDailyMatrix = () => {
+   701→    if (!dailyMatrixData) return null;
+   702→
+   703→    const { selapanan, jimpitanAmount, dailyColumns, familyRows, overallSummary } = dailyMatrixData;
+   704→    const today = new Date().toISOString().split('T')[0];
+   705→
+   706→    // Group columns by week
+   707→    const weeks: Record<number, typeof dailyColumns> = {};
+   708→    for (const col of dailyColumns) {
+   709→      if (!weeks[col.weekNumber]) weeks[col.weekNumber] = [];
+   710→      weeks[col.weekNumber].push(col);
+   711→    }
+   712→
+   713→    // Filter by selected week
+   714→    const displayWeeks = dailyMatrixWeek === 0 ? weeks : { [dailyMatrixWeek]: weeks[dailyMatrixWeek] || [] };
+   715→
+   716→    return (
+   717→      <div className="space-y-4">
+   718→        {/* Header */}
+   719→        <div className="rounded-xl border bg-slate-800 text-white p-4 shadow-sm">
+   720→          <div className="flex items-center justify-between">
+   721→            <div>
+   722→              <div className="flex items-center gap-2 mb-1">
+   723→                <Badge className="bg-amber-400 text-slate-900 text-[10px] font-bold">REKAP HARIAN</Badge>
+   724→                <span className="text-slate-300 text-sm">Selapanan Ke-{selapanan.number}</span>
+   725→              </div>
+   726→              <h3 className="text-base font-bold">Kurangan Jimpitan 35 Hari</h3>
+   727→              <p className="text-xs text-slate-400 mt-0.5">
+   728→                Periode: {formatDateShort(selapanan.periodeStart)} — {formatDateShort(selapanan.periodeEnd)}
+   729→              </p>
+   730→            </div>
+   731→            <div className="text-right">
+   732→              <p className="text-xs text-slate-400">Besaran/Hari</p>
+   733→              <p className="text-xl font-bold text-emerald-400">{formatCurrency(jimpitanAmount)}</p>
+   734→            </div>
+   735→          </div>
+   736→        </div>
+   737→
+   738→        {/* Summary Cards */}
+   739→        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3">
+   740→          <div className="rounded-lg border bg-white p-3 shadow-sm">
+   741→            <p className="text-[10px] text-slate-500 font-medium uppercase">KK Harian</p>
+   742→            <p className="text-lg font-bold text-slate-800">{overallSummary.totalFamilies}</p>
+   743→          </div>
+   744→          <div className="rounded-lg border bg-white p-3 shadow-sm">
+   745→            <p className="text-[10px] text-slate-500 font-medium uppercase">Hari Terinput</p>
+   746→            <p className="text-lg font-bold text-slate-800">{overallSummary.daysCollected}/35</p>
+   747→          </div>
+   748→          <div className="rounded-lg border bg-white p-3 shadow-sm">
+   749→            <p className="text-[10px] text-emerald-600 font-medium uppercase">Total Terkumpul</p>
+   750→            <p className="text-lg font-bold text-emerald-700">{formatCurrency(overallSummary.totalPaid)}</p>
+   751→          </div>
+   752→          <div className="rounded-lg border bg-white p-3 shadow-sm">
+   753→            <p className="text-[10px] text-red-600 font-medium uppercase">Total Kurangan</p>
+   754→            <p className="text-lg font-bold text-red-600">{formatCurrency(overallSummary.totalShortage)}</p>
+   755→          </div>
+   756→          <div className="rounded-lg border bg-white p-3 shadow-sm">
+   757→            <p className="text-[10px] text-slate-500 font-medium uppercase">Target</p>
+   758→            <p className="text-lg font-bold text-slate-800">{formatCurrency(overallSummary.totalExpected)}</p>
+   759→          </div>
+   760→          <div className="rounded-lg border bg-white p-3 shadow-sm">
+   761→            <p className="text-[10px] text-sky-600 font-medium uppercase">Rata-rata Bayar</p>
+   762→            <p className="text-lg font-bold text-sky-700">{overallSummary.avgPaymentRate}%</p>
+   763→          </div>
+   764→        </div>
+   765→
+   766→        {/* Week Filter */}
+   767→        <div className="flex items-center gap-2 flex-wrap">
+   768→          <span className="text-xs text-slate-500 font-medium">Filter Minggu:</span>
+   769→          <button
+   770→            className={`h-7 px-3 rounded-md text-xs font-medium border transition-colors ${
+   771→              dailyMatrixWeek === 0 ? 'bg-slate-800 text-white border-slate-800' : 'border-slate-200 text-slate-600 bg-white hover:bg-slate-50'
+   772→            }`}
+   773→            onClick={() => setDailyMatrixWeek(0)}
+   774→          >
+   775→            Semua
+   776→          </button>
+   777→          {[1, 2, 3, 4, 5].map(w => (
+   778→            <button
+   779→              key={w}
+   780→              className={`h-7 px-3 rounded-md text-xs font-medium border transition-colors ${
+   781→                dailyMatrixWeek === w ? 'bg-slate-800 text-white border-slate-800' : 'border-slate-200 text-slate-600 bg-white hover:bg-slate-50'
+   782→              }`}
+   783→              onClick={() => setDailyMatrixWeek(w)}
+   784→            >
+   785→              Minggu {w}
+   786→            </button>
+   787→          ))}
+   788→        </div>
+   789→
+   790→        {/* "Semua" = Recap Summary, or Detailed Weekly Table */}
+   791→        {dailyMatrixWeek === 0 ? (
+   792→          /* Recap Summary for All Weeks */
+   793→          <div className="rounded-xl border bg-white shadow-sm overflow-hidden">
+   794→            <div className="p-3 border-b bg-slate-50/50">
+   795→              <h3 className="text-xs font-semibold text-slate-700 flex items-center gap-1">
+   796→                <TrendingUp className="w-3.5 h-3.5 text-emerald-500" />
+   797→                Rekap Mingguan — 35 Hari
+   798→              </h3>
+   799→            </div>
+   800→            <div className="overflow-x-auto">
+   801→              <table className="w-full text-xs">
+   802→                <thead>
+   803→                  <tr className="bg-slate-50/80 border-b">
+   804→                    <th className="text-left p-2.5 font-semibold text-slate-600 w-10">No</th>
+   805→                    <th className="text-left p-2.5 font-semibold text-slate-600 min-w-[100px]">Minggu</th>
+   806→                    <th className="text-left p-2.5 font-semibold text-slate-600 min-w-[140px]">Tanggal</th>
+   807→                    <th className="text-center p-2.5 font-semibold text-slate-600 w-14">Hari</th>
+   808→                    <th className="text-right p-2.5 font-semibold text-slate-600 min-w-[90px]">Target</th>
+   809→                    <th className="text-right p-2.5 font-semibold text-emerald-600 min-w-[90px]">Terkumpul</th>
+   810→                    <th className="text-right p-2.5 font-semibold text-red-600 min-w-[90px]">Kurangan</th>
+   811→                    <th className="text-right p-2.5 font-semibold text-sky-600 w-14">%</th>
+   812→                  </tr>
+   813→                </thead>
+   814→                <tbody>
+   815→                  {[1, 2, 3, 4, 5].map(weekNum => {
+   816→                    const cols = weeks[weekNum] || [];
+   817→                    if (cols.length === 0) return null;
+   818→                    const weekPaid = cols.reduce((sum, col) => sum + familyRows.reduce((s, f) => s + (f.dailyData[col.date]?.paidAmount || 0), 0), 0);
+   819→                    const weekShortage = cols.reduce((sum, col) => sum + familyRows.reduce((s, f) => s + (f.dailyData[col.date]?.shortage || 0), 0), 0);
+   820→                    const weekExpected = cols.length * jimpitanAmount * familyRows.length;
+   821→                    const weekRate = weekExpected > 0 ? Math.round((weekPaid / weekExpected) * 100) : 0;
+   822→                    const isCurrentWeek = cols.some(col => col.date === today);
+   823→
+   824→                    return (
+   825→                      <tr
+   826→                        key={weekNum}
+   827→                        className={`border-b cursor-pointer hover:bg-slate-50/80 transition-colors ${isCurrentWeek ? 'bg-amber-50/50' : weekNum % 2 === 0 ? 'bg-white' : 'bg-slate-50/30'}`}
+   828→                        onClick={() => setDailyMatrixWeek(weekNum)}
+   829→                      >
+   830→                        <td className="p-2.5 text-slate-400 font-medium">{weekNum}</td>
+   831→                        <td className="p-2.5 font-semibold text-slate-800">Minggu {weekNum}</td>
+   832→                        <td className="p-2.5 text-slate-600">
+   833→                          {formatDateShort(cols[0]?.date || '')} — {formatDateShort(cols[cols.length - 1]?.date || '')}
+   834→                        </td>
+   835→                        <td className="p-2.5 text-center text-slate-500">{cols.length}</td>
+   836→                        <td className="p-2.5 text-right text-slate-700">{formatCurrency(weekExpected)}</td>
+   837→                        <td className="p-2.5 text-right font-bold text-emerald-700">{formatCurrency(weekPaid)}</td>
+   838→                        <td className={`p-2.5 text-right font-bold ${weekShortage > 0 ? 'text-red-600' : 'text-emerald-600'}`}>
+   839→                          {weekShortage > 0 ? formatCurrency(weekShortage) : '✓'}
+   840→                        </td>
+   841→                        <td className={`p-2.5 text-right font-bold ${weekRate >= 80 ? 'text-emerald-600' : weekRate >= 50 ? 'text-amber-600' : 'text-red-600'}`}>
+   842→                          {weekRate}%
+   843→                        </td>
+   844→                      </tr>
+   845→                    );
+   846→                  })}
+   847→                  {/* Total Row */}
+   848→                  <tr className="bg-slate-100 border-t-2 border-slate-300 font-bold">
+   849→                    <td className="p-2.5 text-slate-500" colSpan={3}>TOTAL 35 HARI</td>
+   850→                    <td className="p-2.5 text-center text-slate-600">{dailyColumns.length}</td>
+   851→                    <td className="p-2.5 text-right text-slate-700">{formatCurrency(overallSummary.totalExpected)}</td>
+   852→                    <td className="p-2.5 text-right text-emerald-700">{formatCurrency(overallSummary.totalPaid)}</td>
+   853→                    <td className={`p-2.5 text-right ${overallSummary.totalShortage > 0 ? 'text-red-600' : 'text-emerald-600'}`}>
+   854→                      {overallSummary.totalShortage > 0 ? formatCurrency(overallSummary.totalShortage) : '✓'}
+   855→                    </td>
+   856→                    <td className={`p-2.5 text-right ${overallSummary.avgPaymentRate >= 80 ? 'text-emerald-600' : overallSummary.avgPaymentRate >= 50 ? 'text-amber-600' : 'text-red-600'}`}>
+   857→                      {overallSummary.avgPaymentRate}%
+   858→                    </td>
+   859→                  </tr>
+   860→                </tbody>
+   861→              </table>
+   862→            </div>
+   863→            <div className="p-2.5 border-t bg-slate-50/50 text-center">
+   864→              <p className="text-[10px] text-slate-400">Klik baris minggu untuk melihat detail harian per warga</p>
+   865→            </div>
+   866→          </div>
+   867→        ) : (
+   868→          /* Detailed Weekly Table for Selected Week */
+   869→          Object.entries(displayWeeks).map(([weekNum, cols]) => (
+   870→            <div key={weekNum} className="space-y-2">
+   871→              <h4 className="text-xs font-semibold text-slate-600 flex items-center gap-1">
+   872→                <Calendar className="w-3.5 h-3.5" />
+   873→                Minggu {weekNum} ({formatDateShort(cols[0]?.date || '')} — {formatDateShort(cols[cols.length - 1]?.date || '')})
+   874→              </h4>
+   875→              <div className="rounded-xl border bg-white shadow-sm overflow-hidden">
+   876→                <div className="overflow-x-auto">
+   877→                  <table className="w-full text-xs">
+   878→                    <thead>
+   879→                      <tr className="bg-slate-50/80 border-b">
+   880→                        <th className="text-left p-2 min-w-[120px] sticky left-0 bg-slate-50 z-10 font-semibold text-slate-600">Nama KK</th>
+   881→                        {cols.map(col => {
+   882→                          const isToday = col.date === today;
+   883→                          const isFuture = col.date > today;
+   884→                          return (
+   885→                            <th
+   886→                              key={col.date}
+   887→                              className={`text-center p-1.5 min-w-[52px] font-medium ${
+   888→                                isToday ? 'bg-amber-100 text-amber-800' : isFuture ? 'text-slate-300' : 'text-slate-500'
+   889→                              }`}
+   890→                            >
+   891→                              <div className="text-[9px]">{col.nightLabel}</div>
+   892→                              <div className="text-[10px] font-bold">{col.date.slice(8)}</div>
+   893→                              {col.groupName && (
+   894→                                <div className="text-[8px] text-slate-400 mt-0.5">G{col.dayOfWeek + 1}</div>
+   895→                              )}
+   896→                            </th>
+   897→                          );
+   898→                        })}
+   899→                        <th className="text-right p-2 min-w-[50px] font-semibold text-emerald-600 bg-slate-50">Lunas</th>
+   900→                        <th className="text-right p-2 min-w-[50px] font-semibold text-red-600 bg-slate-50">Kurang</th>
+   901→                        <th className="text-right p-2 min-w-[44px] font-semibold text-sky-600 bg-slate-50">%</th>
+   902→                      </tr>
+   903→                    </thead>
+   904→                    <tbody>
+   905→                      {familyRows.map((family, idx) => {
+   906→                        const weekCols = cols;
+   907→                        const weekPaid = weekCols.reduce((sum, col) => sum + (family.dailyData[col.date]?.paidAmount || 0), 0);
+   908→                        const weekShortage = weekCols.reduce((sum, col) => sum + (family.dailyData[col.date]?.shortage || 0), 0);
+   909→                        const weekExpected = weekCols.length * jimpitanAmount;
+   910→                        const weekRate = weekExpected > 0 ? Math.round((weekPaid / weekExpected) * 100) : 0;
+   911→
+   912→                        return (
+   913→                          <tr key={family.familyId} className={`border-b ${idx % 2 === 0 ? 'bg-white' : 'bg-slate-50/30'}`}>
+   914→                            <td className="p-2 font-medium text-slate-800 sticky left-0 bg-inherit z-10 truncate max-w-[120px]" title={family.familyHead}>
+   915→                              <span className="text-[11px]">{family.familyHead}</span>
+   916→                            </td>
+   917→                            {weekCols.map(col => {
+   918→                              const data = family.dailyData[col.date];
+   919→                              const isToday = col.date === today;
+   920→                              const isFuture = col.date > today;
+   921→                              const paid = data?.paidAmount ?? 0;
+   922→                              const shortage = data?.shortage ?? (isFuture ? 0 : jimpitanAmount);
+   923→
+   924→                              let cellBg = 'bg-white';
+   925→                              let cellText = '';
+   926→                              let cellContent = '';
+   927→
+   928→                              if (isFuture) {
+   929→                                cellBg = 'bg-slate-50';
+   930→                                cellContent = '—';
+   931→                                cellText = 'text-slate-300';
+   932→                              } else if (paid >= jimpitanAmount) {
+   933→                                cellBg = 'bg-emerald-50';
+   934→                                cellContent = '✓';
+   935→                                cellText = 'text-emerald-600';
+   936→                              } else if (paid > 0) {
+   937→                                cellBg = 'bg-amber-50';
+   938→                                cellContent = `${paid >= 1000 ? '1rb' : paid >= 500 ? '5r' : paid}`;
+   939→                                cellText = 'text-amber-700';
+   940→                              } else {
+   941→                                cellBg = 'bg-red-50';
+   942→                                cellContent = '✗';
+   943→                                cellText = 'text-red-500';
+   944→                              }
+   945→
+   946→                              return (
+   947→                                <td
+   948→                                  key={col.date}
+   949→                                  className={`text-center p-1 ${cellBg} ${cellText} ${isToday ? 'ring-1 ring-amber-400' : ''} font-medium`}
+   950→                                  title={`${family.familyHead} — ${col.date}: ${isFuture ? 'Belum' : `Bayar ${formatCurrency(paid)}, Kurang ${formatCurrency(shortage)}`}`}
+   951→                                >
+   952→                                  <span className="text-[10px]">{cellContent}</span>
+   953→                                </td>
+   954→                              );
+   955→                            })}
+   956→                            <td className="text-right p-2 font-bold text-emerald-700">{formatCurrency(weekPaid)}</td>
+   957→                            <td className={`text-right p-2 font-bold ${weekShortage > 0 ? 'text-red-600' : 'text-slate-300'}`}>
+   958→                              {weekShortage > 0 ? formatCurrency(weekShortage) : '—'}
+   959→                            </td>
+   960→                            <td className={`text-right p-2 font-bold ${weekRate >= 80 ? 'text-emerald-600' : weekRate >= 50 ? 'text-amber-600' : 'text-red-600'}`}>
+   961→                              {weekRate}%
+   962→                            </td>
+   963→                          </tr>
+   964→                        );
+   965→                      })}
+   966→                      {/* Total Row */}
+   967→                      <tr className="bg-slate-100 border-t-2 border-slate-300 font-bold">
+   968→                        <td className="p-2 sticky left-0 bg-slate-100 z-10 text-slate-700">TOTAL</td>
+   969→                        {cols.map(col => {
+   970→                          const dayPaid = familyRows.reduce((sum, f) => sum + (f.dailyData[col.date]?.paidAmount || 0), 0);
+   971→                          const isFuture = col.date > today;
+   972→                          return (
+   973→                            <td key={col.date} className={`text-center p-1 ${isFuture ? 'text-slate-300' : 'text-emerald-700'}`}>
+   974→                              <span className="text-[9px]">{isFuture ? '—' : formatCurrency(dayPaid)}</span>
+   975→                            </td>
+   976→                          );
+   977→                        })}
+   978→                        <td className="text-right p-2 text-emerald-700">
+   979→                          {formatCurrency(cols.reduce((sum, col) => sum + familyRows.reduce((s, f) => s + (f.dailyData[col.date]?.paidAmount || 0), 0), 0))}
+   980→                        </td>
+   981→                        <td className="text-right p-2 text-red-600">
+   982→                          {formatCurrency(cols.reduce((sum, col) => sum + familyRows.reduce((s, f) => s + (f.dailyData[col.date]?.shortage || 0), 0), 0))}
+   983→                        </td>
+   984→                        <td className="text-right p-2 text-sky-700">
+   985→                          {(() => {
+   986→                            const totalExp = cols.length * jimpitanAmount * familyRows.length;
+   987→                            const totalPd = cols.reduce((sum, col) => sum + familyRows.reduce((s, f) => s + (f.dailyData[col.date]?.paidAmount || 0), 0), 0);
+   988→                            return totalExp > 0 ? Math.round((totalPd / totalExp) * 100) : 0;
+   989→                          })()}%
+   990→                        </td>
+   991→                      </tr>
+   992→                    </tbody>
+   993→                  </table>
+   994→                </div>
+   995→              </div>
+   996→            </div>
+   997→          ))
+   998→        )}
+   999→
+  1000→        {/* Legend */}
+  1001→        <div className="flex items-center gap-4 flex-wrap text-[10px] text-slate-500 px-1">
+  1002→          <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-emerald-50 border border-emerald-200 inline-block" /> Lunas (Rp.1.000)</span>
+  1003→          <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-amber-50 border border-amber-200 inline-block" /> Sebagian (&lt;Rp.1.000)</span>
+  1004→          <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-red-50 border border-red-200 inline-block" /> Tidak Bayar</span>
+  1005→          <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-slate-50 border border-slate-200 inline-block" /> Belum terjadi</span>
+  1006→          <span className="flex items-center gap-1"><span className="w-3 h-3 rounded ring-1 ring-amber-400 inline-block" /> Hari ini</span>
+  1007→        </div>
+  1008→
+  1009→        {/* Back Button */}
+  1010→        <div className="flex items-center gap-2">
+  1011→          <Button
+  1012→            size="sm"
+  1013→            variant="outline"
+  1014→            className="h-9 text-xs"
+  1015→            onClick={exitDailyMatrix}
+  1016→          >
+  1017→            <ArrowLeft className="w-3.5 h-3.5 mr-1" />
+  1018→            Kembali ke Selapanan
+  1019→          </Button>
+  1020→          <Button
+  1021→            size="sm"
+  1022→            className="h-9 bg-slate-800 hover:bg-slate-700 text-white text-xs"
+  1023→            onClick={() => fetchDailyMatrix(selapanan.id)}
+  1024→            disabled={loadingDailyMatrix}
+  1025→          >
+  1026→            <Loader2 className={`w-3.5 h-3.5 mr-1 ${loadingDailyMatrix ? 'animate-spin' : ''}`} />
+  1027→            Refresh Data
+  1028→          </Button>
+  1029→        </div>
+  1030→      </div>
+  1031→    );
+  1032→  };
+  1033→
+  1034→  // ----------------------------------------
+  1035→  // Loading Skeleton
+  1036→  // ----------------------------------------
+  1037→
+  1038→  if (loading) {
+  1039→    return (
+  1040→      <div className="space-y-4">
+  1041→        <div className="flex items-center justify-between">
+  1042→          <div>
+  1043→            <div className="h-7 w-36 bg-slate-200 rounded-lg animate-pulse" />
+  1044→            <div className="h-4 w-48 bg-slate-100 rounded animate-pulse mt-1.5" />
+  1045→          </div>
+  1046→        </div>
+  1047→        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+  1048→          {[1, 2, 3, 4].map(i => (
+  1049→            <div key={i} className="h-[72px] bg-slate-100 rounded-xl animate-pulse" />
+  1050→          ))}
+  1051→        </div>
+  1052→        <div className="h-40 bg-slate-100 rounded-xl animate-pulse" />
+  1053→      </div>
+  1054→    );
+  1055→  }
+  1056→
+  1057→  // ----------------------------------------
+  1058→  // Derived data
+  1059→  // ----------------------------------------
+  1060→
+  1061→  const upcoming = selapananList.find(s => s.status === 'UPCOMING');
+  1062→  const completed = selapananList.filter(s => s.status === 'COMPLETED');
+  1063→  const totalAllIncome = completed.reduce((sum, s) => sum + s.totalIncome, 0);
+  1064→
+  1065→  // ----------------------------------------
+  1066→  // Render: Stats
+  1067→  // ----------------------------------------
+  1068→
+  1069→  const renderStats = () => {
+  1070→    const daysRemaining = upcoming ? Math.max(0, Math.ceil((new Date(upcoming.meetingDate).getTime() - Date.now()) / (1000 * 60 * 60 * 24))) : 0;
+  1071→
+  1072→    return (
+  1073→      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+  1074→        <div className="rounded-xl border bg-white p-4 shadow-sm">
+  1075→          <div className="flex items-center gap-3">
+  1076→            <div className="w-9 h-9 rounded-lg bg-slate-800 flex items-center justify-center">
+  1077→              <Hash className="w-4 h-4 text-white" />
+  1078→            </div>
+  1079→            <div>
+  1080→              <p className="text-xs text-slate-500">Selapanan Aktif</p>
+  1081→              <p className="text-lg font-bold text-slate-800">Ke-{upcoming?.number || '-'}</p>
+  1082→            </div>
+  1083→          </div>
+  1084→        </div>
+  1085→        <div className="rounded-xl border bg-white p-4 shadow-sm">
+  1086→          <div className="flex items-center gap-3">
+  1087→            <div className="w-9 h-9 rounded-lg bg-amber-100 flex items-center justify-center">
+  1088→              <Clock className="w-4 h-4 text-amber-700" />
+  1089→            </div>
+  1090→            <div>
+  1091→              <p className="text-xs text-slate-500">Hari Menuju Rapat</p>
+  1092→              <p className="text-lg font-bold text-slate-800">{daysRemaining} hari</p>
+  1093→            </div>
+  1094→          </div>
+  1095→        </div>
+  1096→        <div className="rounded-xl border bg-white p-4 shadow-sm">
+  1097→          <div className="flex items-center gap-3">
+  1098→            <div className="w-9 h-9 rounded-lg bg-emerald-100 flex items-center justify-center">
+  1099→              <CheckCircle2 className="w-4 h-4 text-emerald-700" />
+  1100→            </div>
+  1101→            <div>
+  1102→              <p className="text-xs text-slate-500">Selapanan Selesai</p>
+  1103→              <p className="text-lg font-bold text-slate-800">{completed.length}</p>
+  1104→            </div>
+  1105→          </div>
+  1106→        </div>
+  1107→        <div className="rounded-xl border bg-white p-4 shadow-sm">
+  1108→          <div className="flex items-center gap-3">
+  1109→            <div className="w-9 h-9 rounded-lg bg-sky-100 flex items-center justify-center">
+  1110→              <Wallet className="w-4 h-4 text-sky-700" />
+  1111→            </div>
+  1112→            <div>
+  1113→              <p className="text-xs text-slate-500">Total Pemasukan</p>
+  1114→              <p className="text-lg font-bold text-slate-800">{formatCurrency(totalAllIncome)}</p>
+  1115→            </div>
+  1116→          </div>
+  1117→        </div>
+  1118→      </div>
+  1119→    );
+  1120→  };
+  1121→
+  1122→  // ----------------------------------------
+  1123→  // Render: Current Period Hero (Preview Mode)
+  1124→  // ----------------------------------------
+  1125→
+  1126→  const renderCurrentPeriod = () => {
+  1127→    if (!upcoming) {
+  1128→      return (
+  1129→        <Card className="rounded-xl border shadow-sm">
+  1130→          <CardContent className="p-8 text-center">
+  1131→            <Calendar className="w-12 h-12 text-slate-300 mx-auto mb-3" />
+  1132→            <p className="text-slate-500 font-medium">Belum ada selapanan aktif</p>
+  1133→            {isAdmin && (
+  1134→              <Button
+  1135→                size="sm"
+  1136→                className="mt-4 bg-slate-800 hover:bg-slate-700 text-white"
+  1137→                onClick={() => { handleAutoGenerate(); setCreateOpen(true); }}
+  1138→              >
+  1139→                <Plus className="w-4 h-4 mr-1" />
+  1140→                Buat Selapanan ke-179
+  1141→              </Button>
+  1142→            )}
+  1143→          </CardContent>
+  1144→        </Card>
+  1145→      );
+  1146→    }
+  1147→
+  1148→    const recap = recapMap[upcoming.id];
+  1149→    const isLoading = loadingRecapId === upcoming.id;
+  1150→    const daysRemaining = Math.max(0, Math.ceil((new Date(upcoming.meetingDate).getTime() - Date.now()) / (1000 * 60 * 60 * 24)));
+  1151→    const daysElapsed = Math.max(0, Math.ceil((Date.now() - new Date(upcoming.periodeStart).getTime()) / (1000 * 60 * 60 * 24)));
+  1152→
+  1153→    return (
+  1154→      <div className="space-y-4">
+  1155→        {/* Period Info Card */}
+  1156→        <Card className="rounded-xl border shadow-sm overflow-hidden">
+  1157→          <div className="bg-slate-800 text-white p-4">
+  1158→            <div className="flex items-center justify-between">
+  1159→              <div>
+  1160→                <div className="flex items-center gap-2 mb-1">
+  1161→                  <Badge className="bg-amber-400 text-slate-900 text-[10px] font-bold">SELANJUTNYA</Badge>
+  1162→                  <span className="text-slate-300 text-sm">Selapanan Ke-{upcoming.number}</span>
+  1163→                </div>
+  1164→                <h3 className="text-lg font-bold">
+  1165→                  Rapat: {formatDateShort(upcoming.meetingDate)}
+  1166→                </h3>
+  1167→                <div className="flex items-center gap-4 mt-1 text-sm text-slate-300">
+  1168→                  <span>Periode: {formatDateShort(upcoming.periodeStart)} — {formatDateShort(upcoming.periodeEnd)}</span>
+  1169→                  {upcoming.meetingLocation && (
+  1170→                    <span className="flex items-center gap-1">
+  1171→                      <MapPin className="w-3.5 h-3.5" />
+  1172→                      {upcoming.meetingLocation}
+  1173→                    </span>
+  1174→                  )}
+  1175→                </div>
+  1176→              </div>
+  1177→              <div className="text-right">
+  1178→                <div className="text-3xl font-bold">{daysRemaining}</div>
+  1179→                <div className="text-xs text-slate-400">hari lagi</div>
+  1180→              </div>
+  1181→            </div>
+  1182→            {/* Progress bar */}
+  1183→            <div className="mt-3 bg-slate-700 rounded-full h-2">
+  1184→              <div
+  1185→                className="bg-amber-400 rounded-full h-2 transition-all"
+  1186→                style={{ width: `${Math.min(100, (daysElapsed / 35) * 100)}%` }}
+  1187→              />
+  1188→            </div>
+  1189→            <div className="flex justify-between text-xs text-slate-400 mt-1">
+  1190→              <span>Hari ke-{daysElapsed} dari 35</span>
+  1191→              <span>5x tugas ronda per grup</span>
+  1192→            </div>
+  1193→          </div>
+  1194→
+  1195→          {/* Financial Summary Grid */}
+  1196→          <CardContent className="p-4">
+  1197→            {/* Quick access to Daily Matrix - always visible */}
+  1198→            {isAdmin && (
+  1199→              <div className="mb-4">
+  1200→                <Button
+  1201→                  size="sm"
+  1202→                  className="w-full h-10 bg-teal-600 hover:bg-teal-700 text-white text-xs rounded-lg"
+  1203→                  onClick={() => fetchDailyMatrix(upcoming.id)}
+  1204→                  disabled={loadingDailyMatrix}
+  1205→                >
+  1206→                  {loadingDailyMatrix ? <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" /> : <Eye className="w-3.5 h-3.5 mr-1" />}
+  1207→                  Lihat Rekap Harian 35 Hari — Kurangan Jimpitan per Warga per Hari
+  1208→                </Button>
+  1209→              </div>
+  1210→            )}
+  1211→
+  1212→            {isLoading ? (
+  1213→              <div className="flex items-center justify-center py-8">
+  1214→                <Loader2 className="w-5 h-5 animate-spin text-slate-400 mr-2" />
+  1215→                <span className="text-sm text-slate-400">Memuat rekap keuangan...</span>
+  1216→              </div>
+  1217→            ) : recap ? (
+  1218→              <div className="space-y-4">
+  1219→                {/* Income breakdown grid */}
+  1220→                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
+  1221→                  <div className="rounded-lg border p-3">
+  1222→                    <p className="text-[10px] text-slate-500 font-medium uppercase">Jimpitan Harian</p>
+  1223→                    <p className="text-sm font-bold text-slate-800">{formatCurrency(recap.jimpitanByGroup.reduce((s, g) => s + g.totalPaid, 0))}</p>
+  1224→                    <p className="text-[10px] text-slate-400">{recap.jimpitanByGroup.reduce((s, g) => s + g.totalExpected, 0) > 0 ? `target ${formatCurrency(recap.jimpitanByGroup.reduce((s, g) => s + g.totalExpected, 0))}` : '-'}</p>
+  1225→                  </div>
+  1226→                  <div className="rounded-lg border p-3">
+  1227→                    <p className="text-[10px] text-slate-500 font-medium uppercase">Iuran Bulanan</p>
+  1228→                    <p className="text-sm font-bold text-slate-800">{formatCurrency(recap.monthlyPayers.reduce((s, m) => s + m.totalDue, 0))}</p>
+  1229→                    <p className="text-[10px] text-slate-400">{recap.monthlyPayers.length} warga bulanan</p>
+  1230→                  </div>
+  1231→                  <div className="rounded-lg border p-3">
+  1232→                    <p className="text-[10px] text-slate-500 font-medium uppercase">Iuran Ronda</p>
+  1233→                    <p className="text-sm font-bold text-slate-800">{formatCurrency(recap.rondaFees.reduce((s, r) => s + r.rondaFee, 0))}</p>
+  1234→                    <p className="text-[10px] text-slate-400">{recap.rondaFees.length} warga bayar</p>
+  1235→                  </div>
+  1236→                  <div className="rounded-lg border p-3">
+  1237→                    <p className="text-[10px] text-amber-600 font-medium uppercase">Kurangan</p>
+  1238→                    <p className="text-sm font-bold text-amber-700">{formatCurrency(recap.totalOutstanding)}</p>
+  1239→                    <p className="text-[10px] text-slate-400">dari periode lalu + sekarang</p>
+  1240→                  </div>
+  1241→                  <div className="rounded-lg border p-3">
+  1242→                    <p className="text-[10px] text-emerald-600 font-medium uppercase">Total Estimasi</p>
+  1243→                    <p className="text-sm font-bold text-emerald-700">{formatCurrency(recap.totalExpected)}</p>
+  1244→                    <p className="text-[10px] text-slate-400">pemasukan selapanan ini</p>
+  1245→                  </div>
+  1246→                </div>
+  1247→
+  1248→                {/* Detail Tables */}
+  1249→                <Collapsible>
+  1250→                  <CollapsibleTrigger asChild>
+  1251→                    <button className="w-full flex items-center justify-center gap-1 text-xs text-slate-500 hover:text-slate-700 py-2 border-t">
+  1252→                      <span>Lihat Detail Rekap</span>
+  1253→                      <ChevronDown className="w-3.5 h-3.5" />
+  1254→                    </button>
+  1255→                  </CollapsibleTrigger>
+  1256→                  <CollapsibleContent>
+  1257→                    <div className="space-y-4 pt-3">
+  1258→                      {/* Jimpitan per Group */}
+  1259→                      {recap.jimpitanByGroup.length > 0 && (
+  1260→                        <div>
+  1261→                          <h4 className="text-xs font-semibold text-slate-600 mb-2 flex items-center gap-1">
+  1262→                            <Shield className="w-3.5 h-3.5" /> Jimpitan Harian per Grup
+  1263→                          </h4>
+  1264→                          <div className="overflow-x-auto rounded-lg border">
+  1265→                            <Table>
+  1266→                              <TableHeader>
+  1267→                                <TableRow className="bg-slate-50/50">
+  1268→                                  <TableHead className="text-[11px]">Grup</TableHead>
+  1269→                                  <TableHead className="text-[11px] text-center">Malam</TableHead>
+  1270→                                  <TableHead className="text-[11px] text-right">Target</TableHead>
+  1271→                                  <TableHead className="text-[11px] text-right">Terkumpul</TableHead>
+  1272→                                  <TableHead className="text-[11px] text-right">Kurang</TableHead>
+  1273→                                </TableRow>
+  1274→                              </TableHeader>
+  1275→                              <TableBody>
+  1276→                                {recap.jimpitanByGroup.map(g => (
+  1277→                                  <TableRow key={g.groupId}>
+  1278→                                    <TableCell className="text-xs font-medium">{g.groupName}</TableCell>
+  1279→                                    <TableCell className="text-xs text-center">{g.nightsCollected}/5</TableCell>
+  1280→                                    <TableCell className="text-xs text-right">{formatCurrency(g.totalExpected)}</TableCell>
+  1281→                                    <TableCell className="text-xs text-right text-emerald-600">{formatCurrency(g.totalPaid)}</TableCell>
+  1282→                                    <TableCell className="text-xs text-right text-amber-600">{formatCurrency(g.totalShortage)}</TableCell>
+  1283→                                  </TableRow>
+  1284→                                ))}
+  1285→                              </TableBody>
+  1286→                            </Table>
+  1287→                          </div>
+  1288→                        </div>
+  1289→                      )}
+  1290→
+  1291→                      {/* Monthly Payers */}
+  1292→                      {recap.monthlyPayers.length > 0 && (
+  1293→                        <div>
+  1294→                          <h4 className="text-xs font-semibold text-slate-600 mb-2 flex items-center gap-1">
+  1295→                            <Wallet className="w-3.5 h-3.5" /> Warga Iuran Bulanan
+  1296→                          </h4>
+  1297→                          <div className="overflow-x-auto rounded-lg border">
+  1298→                            <Table>
+  1299→                              <TableHeader>
+  1300→                                <TableRow className="bg-slate-50/50">
+  1301→                                  <TableHead className="text-[11px]">KK</TableHead>
+  1302→                                  <TableHead className="text-[11px] text-center">Iuran/Bulan</TableHead>
+  1303→                                  <TableHead className="text-[11px] text-center">Bulan</TableHead>
+  1304→                                  <TableHead className="text-[11px] text-right">Total</TableHead>
+  1305→                                </TableRow>
+  1306→                              </TableHeader>
+  1307→                              <TableBody>
+  1308→                                {recap.monthlyPayers.map(m => (
+  1309→                                  <TableRow key={m.familyId}>
+  1310→                                    <TableCell className="text-xs font-medium">{m.familyHead}</TableCell>
+  1311→                                    <TableCell className="text-xs text-center">{formatCurrency(m.amount)}</TableCell>
+  1312→                                    <TableCell className="text-xs text-center">{m.monthsSpanned}x</TableCell>
+  1313→                                    <TableCell className="text-xs text-right font-medium">{formatCurrency(m.totalDue)}</TableCell>
+  1314→                                  </TableRow>
+  1315→                                ))}
+  1316→                              </TableBody>
+  1317→                            </Table>
+  1318→                          </div>
+  1319→                        </div>
+  1320→                      )}
+  1321→
+  1322→                      {/* Ronda Fees */}
+  1323→                      {recap.rondaFees.length > 0 && (
+  1324→                        <div>
+  1325→                          <h4 className="text-xs font-semibold text-slate-600 mb-2 flex items-center gap-1">
+  1326→                            <Shield className="w-3.5 h-3.5" /> Iuran Ronda (Bayar Pengganti)
+  1327→                          </h4>
+  1328→                          <div className="overflow-x-auto rounded-lg border">
+  1329→                            <Table>
+  1330→                              <TableHeader>
+  1331→                                <TableRow className="bg-slate-50/50">
+  1332→                                  <TableHead className="text-[11px]">KK</TableHead>
+  1333→                                  <TableHead className="text-[11px] text-right">Iuran</TableHead>
+  1334→                                </TableRow>
+  1335→                              </TableHeader>
+  1336→                              <TableBody>
+  1337→                                {recap.rondaFees.map(r => (
+  1338→                                  <TableRow key={r.familyId}>
+  1339→                                    <TableCell className="text-xs font-medium">{r.familyHead}</TableCell>
+  1340→                                    <TableCell className="text-xs text-right">{formatCurrency(r.rondaFee)}</TableCell>
+  1341→                                  </TableRow>
+  1342→                                ))}
+  1343→                              </TableBody>
+  1344→                            </Table>
+  1345→                          </div>
+  1346→                        </div>
+  1347→                      )}
+  1348→
+  1349→                      {/* Shortages */}
+  1350→                      {recap.combinedShortages.filter(s => s.totalShortage > 0).length > 0 && (
+  1351→                        <div>
+  1352→                          <h4 className="text-xs font-semibold text-slate-600 mb-2 flex items-center gap-1">
+  1353→                            <AlertTriangle className="w-3.5 h-3.5 text-amber-500" /> Kurangan Jimpitan
+  1354→                          </h4>
+  1355→                          <div className="overflow-x-auto rounded-lg border">
+  1356→                            <Table>
+  1357→                              <TableHeader>
+  1358→                                <TableRow className="bg-slate-50/50">
+  1359→                                  <TableHead className="text-[11px]">KK</TableHead>
+  1360→                                  <TableHead className="text-[11px] text-right">Bulan Lalu</TableHead>
+  1361→                                  <TableHead className="text-[11px] text-right">Periode Ini</TableHead>
+  1362→                                  <TableHead className="text-[11px] text-right">Total</TableHead>
+  1363→                                </TableRow>
+  1364→                              </TableHeader>
+  1365→                              <TableBody>
+  1366→                                {recap.combinedShortages.filter(s => s.totalShortage > 0).map(s => (
+  1367→                                  <TableRow key={s.familyId}>
+  1368→                                    <TableCell className="text-xs font-medium">
+  1369→                                      <div>
+  1370→                                        {s.familyHead}
+  1371→                                        {s.prevFromSelapanan && s.previousShortage > 0 && (
+  1372→                                          <p className="text-[9px] text-amber-500 font-normal">dari selapanan ke-{s.prevFromSelapanan}</p>
+  1373→                                        )}
+  1374→                                      </div>
+  1375→                                    </TableCell>
+  1376→                                    <TableCell className="text-xs text-right">
+  1377→                                      {s.previousShortage > 0 ? (
+  1378→                                        <span className="text-amber-600">{formatCurrency(s.previousShortage)}</span>
+  1379→                                      ) : (
+  1380→                                        <span className="text-slate-300">-</span>
+  1381→                                      )}
+  1382→                                    </TableCell>
+  1383→                                    <TableCell className="text-xs text-right">
+  1384→                                      {s.currentShortage > 0 ? (
+  1385→                                        <span className="text-slate-600">{formatCurrency(s.currentShortage)}</span>
+  1386→                                      ) : (
+  1387→                                        <span className="text-slate-300">-</span>
+  1388→                                      )}
+  1389→                                    </TableCell>
+  1390→                                    <TableCell className="text-xs text-right font-bold text-red-600">{formatCurrency(s.totalShortage)}</TableCell>
+  1391→                                  </TableRow>
+  1392→                                ))}
+  1393→                              </TableBody>
+  1394→                            </Table>
+  1395→                          </div>
+  1396→                        </div>
+  1397→                      )}
+  1398→
+  1399→                      {/* Custom Levies */}
+  1400→                      {recap.customLevies.length > 0 && (
+  1401→                        <div>
+  1402→                          <h4 className="text-xs font-semibold text-slate-600 mb-2 flex items-center gap-1">
+  1403→                            <FileText className="w-3.5 h-3.5" /> Tarikan Lain
+  1404→                          </h4>
+  1405→                          {recap.customLevies.map(levy => (
+  1406→                            <div key={levy.id} className="mb-3">
+  1407→                              <p className="text-xs font-medium text-slate-700 mb-1">{levy.name}</p>
+  1408→                              <div className="overflow-x-auto rounded-lg border">
+  1409→                                <Table>
+  1410→                                  <TableHeader>
+  1411→                                    <TableRow className="bg-slate-50/50">
+  1412→                                      <TableHead className="text-[11px]">KK</TableHead>
+  1413→                                      <TableHead className="text-[11px] text-right">Total</TableHead>
+  1414→                                      <TableHead className="text-[11px] text-center">Cicilan</TableHead>
+  1415→                                      <TableHead className="text-[11px] text-right">Terbayar</TableHead>
+  1416→                                      <TableHead className="text-[11px] text-right">Per Cicilan</TableHead>
+  1417→                                      <TableHead className="text-[11px] text-center">Status</TableHead>
+  1418→                                    </TableRow>
+  1419→                                  </TableHeader>
+  1420→                                  <TableBody>
+  1421→                                    {levy.items.map(item => (
+  1422→                                      <TableRow key={item.familyId}>
+  1423→                                        <TableCell className="text-xs font-medium">{item.familyHead}</TableCell>
+  1424→                                        <TableCell className="text-xs text-right">{formatCurrency(item.totalAmount)}</TableCell>
+  1425→                                        <TableCell className="text-xs text-center">{item.installments}x</TableCell>
+  1426→                                        <TableCell className="text-xs text-right">{formatCurrency(item.paidAmount)}</TableCell>
+  1427→                                        <TableCell className="text-xs text-right">{formatCurrency(item.nextInstallment)}</TableCell>
+  1428→                                        <TableCell className="text-xs text-center">
+  1429→                                          <Badge className={`text-[9px] ${item.status === 'COMPLETED' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>
+  1430→                                            {LEVY_ITEM_STATUS_LABELS[item.status] || item.status}
+  1431→                                          </Badge>
+  1432→                                        </TableCell>
+  1433→                                      </TableRow>
+  1434→                                    ))}
+  1435→                                  </TableBody>
+  1436→                                </Table>
+  1437→                              </div>
+  1438→                            </div>
+  1439→                          ))}
+  1440→                        </div>
+  1441→                      )}
+  1442→
+  1443→                      {/* Fines */}
+  1444→                      {recap.fines.length > 0 && (
+  1445→                        <div>
+  1446→                          <h4 className="text-xs font-semibold text-slate-600 mb-2 flex items-center gap-1">
+  1447→                            <AlertTriangle className="w-3.5 h-3.5 text-red-500" /> Denda
+  1448→                          </h4>
+  1449→                          <div className="overflow-x-auto rounded-lg border">
+  1450→                            <Table>
+  1451→                              <TableHeader>
+  1452→                                <TableRow className="bg-slate-50/50">
+  1453→                                  <TableHead className="text-[11px]">KK</TableHead>
+  1454→                                  <TableHead className="text-[11px]">Jenis</TableHead>
+  1455→                                  <TableHead className="text-[11px] text-right">Jumlah</TableHead>
+  1456→                                  <TableHead className="text-[11px]">Alasan</TableHead>
+  1457→                                </TableRow>
+  1458→                              </TableHeader>
+  1459→                              <TableBody>
+  1460→                                {recap.fines.map(fine => (
+  1461→                                  <TableRow key={fine.id}>
+  1462→                                    <TableCell className="text-xs font-medium">{fine.familyHead}</TableCell>
+  1463→                                    <TableCell className="text-xs">{fine.type}</TableCell>
+  1464→                                    <TableCell className="text-xs text-right text-red-600">{formatCurrency(fine.amount)}</TableCell>
+  1465→                                    <TableCell className="text-xs text-slate-500">{fine.reason}</TableCell>
+  1466→                                  </TableRow>
+  1467→                                ))}
+  1468→                              </TableBody>
+  1469→                            </Table>
+  1470→                          </div>
+  1471→                        </div>
+  1472→                      )}
+  1473→                    </div>
+  1474→                  </CollapsibleContent>
+  1475→                </Collapsible>
+  1476→
+  1477→                {/* Admin Actions */}
+  1478→                {isAdmin && (
+  1479→                  <div className="flex items-center gap-2 pt-3 border-t flex-wrap">
+  1480→                    <Button
+  1481→                      size="sm"
+  1482→                      className="h-9 bg-slate-800 hover:bg-slate-700 text-white text-xs"
+  1483→                      onClick={() => fetchRecap(upcoming.id)}
+  1484→                    >
+  1485→                      <Loader2 className={`w-3.5 h-3.5 mr-1 ${loadingRecapId === upcoming.id ? 'animate-spin' : ''}`} />
+  1486→                      Refresh Rekap
+  1487→                    </Button>
+  1488→                    <Button
+  1489→                      size="sm"
+  1490→                      className="h-9 bg-teal-600 hover:bg-teal-700 text-white text-xs"
+  1491→                      onClick={() => fetchDailyMatrix(upcoming.id)}
+  1492→                      disabled={loadingDailyMatrix}
+  1493→                    >
+  1494→                      {loadingDailyMatrix ? <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" /> : <Eye className="w-3.5 h-3.5 mr-1" />}
+  1495→                      Rekap Harian 35 Hari
+  1496→                    </Button>
+  1497→                    <Button
+  1498→                      size="sm"
+  1499→                      className="h-9 bg-amber-600 hover:bg-amber-700 text-white text-xs"
+  1500→                      onClick={enterCollectionMode}
+  1501→                    >
+  1502→                      <HandCoins className="w-3.5 h-3.5 mr-1" />
+  1503→                      Mulai Pengumpulan
+  1504→                    </Button>
+  1505→                    <Button
+  1506→                      size="sm"
+  1507→                      className="h-9 bg-emerald-600 hover:bg-emerald-700 text-white text-xs"
+  1508→                      onClick={() => { setCompletingId(upcoming.id); setCompleteOpen(true); }}
+  1509→                    >
+  1510→                      <CheckCircle2 className="w-3.5 h-3.5 mr-1" />
+  1511→                      Selesaikan Selapanan
+  1512→                    </Button>
+  1513→                    <Button
+  1514→                      size="sm"
+  1515→                      variant="outline"
+  1516→                      className="h-9 text-xs border-slate-300"
+  1517→                      onClick={handleExportPdf}
+  1518→                      disabled={exportingPdf}
+  1519→                    >
+  1520→                      {exportingPdf ? <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" /> : <FileDown className="w-3.5 h-3.5 mr-1" />}
+  1521→                      Rekap Selapanan
+  1522→                    </Button>
+  1523→                    <Button
+  1524→                      size="sm"
+  1525→                      variant="outline"
+  1526→                      className="h-9 text-xs border-slate-300"
+  1527→                      onClick={handleExportWargaPdf}
+  1528→                      disabled={exportingWargaPdf}
+  1529→                    >
+  1530→                      {exportingWargaPdf ? <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" /> : <Users className="w-3.5 h-3.5 mr-1" />}
+  1531→                      Data Warga
+  1532→                    </Button>
+  1533→                  </div>
+  1534→                )}
+  1535→              </div>
+  1536→            ) : (
+  1537→              <div className="py-6 text-center">
+  1538→                <p className="text-sm text-slate-400">Klik "Refresh Rekap" untuk memuat rekap keuangan</p>
+  1539→                {isAdmin && (
+  1540→                  <div className="flex items-center justify-center gap-2 mt-3">
+  1541→                    <Button size="sm" variant="outline" className="text-xs" onClick={() => fetchRecap(upcoming.id)}>
+  1542→                      Muat Rekap
+  1543→                    </Button>
+  1544→                    <Button
+  1545→                      size="sm"
+  1546→                      className="h-9 bg-amber-600 hover:bg-amber-700 text-white text-xs"
+  1547→                      onClick={enterCollectionMode}
+  1548→                    >
+  1549→                      <HandCoins className="w-3.5 h-3.5 mr-1" />
+  1550→                      Mulai Pengumpulan
+  1551→                    </Button>
+  1552→                  </div>
+  1553→                )}
+  1554→              </div>
+  1555→            )}
+  1556→          </CardContent>
+  1557→        </Card>
+  1558→      </div>
+  1559→    );
+  1560→  };
+  1561→
+  1562→  // ----------------------------------------
+  1563→  // Render: Collection Mode
+  1564→  // ----------------------------------------
+  1565→
+  1566→  const renderCollectionMode = () => {
+  1567→    if (!upcoming) return null;
+  1568→    const recap = recapMap[upcoming.id];
+  1569→    const isLoading = loadingRecapId === upcoming.id;
+  1570→
+  1571→    if (isLoading && !recap) {
+  1572→      return (
+  1573→        <div className="flex items-center justify-center py-16">
+  1574→          <Loader2 className="w-6 h-6 animate-spin text-slate-400 mr-2" />
+  1575→          <span className="text-sm text-slate-400">Memuat data untuk pengumpulan...</span>
+  1576→        </div>
+  1577→      );
+  1578→    }
+  1579→
+  1580→    if (!recap) {
+  1581→      return (
+  1582→        <Card className="rounded-xl border shadow-sm">
+  1583→          <CardContent className="p-8 text-center">
+  1584→            <p className="text-sm text-slate-500">Data rekap belum dimuat</p>
+  1585→            <Button size="sm" className="mt-3 bg-slate-800 hover:bg-slate-700 text-white text-xs" onClick={() => fetchRecap(upcoming.id)}>
+  1586→              Muat Rekap
+  1587→            </Button>
+  1588→          </CardContent>
+  1589→        </Card>
+  1590→      );
+  1591→    }
+  1592→
+  1593→    return (
+  1594→      <div className="space-y-4">
+  1595→        {/* Collection Mode Header */}
+  1596→        <div className="rounded-xl border bg-slate-800 text-white p-4 shadow-sm">
+  1597→          <div className="flex items-center justify-between">
+  1598→            <div>
+  1599→              <div className="flex items-center gap-2 mb-1">
+  1600→                <Badge className="bg-amber-400 text-slate-900 text-[10px] font-bold">PENGUMPULAN</Badge>
+  1601→                <span className="text-slate-300 text-sm">Selapanan Ke-{upcoming.number}</span>
+  1602→              </div>
+  1603→              <h3 className="text-base font-bold">Mode Pengumpulan Dana</h3>
+  1604→              <p className="text-xs text-slate-400 mt-0.5">Tarikan warga, setoran ronda, denda & lainnya</p>
+  1605→            </div>
+  1606→            <div className="text-right">
+  1607→              <p className="text-xs text-slate-400">Terkumpul Hari Ini</p>
+  1608→              <p className="text-xl font-bold text-emerald-400">{formatCurrency(sessionCollected)}</p>
+  1609→              <Button
+  1610→                size="sm"
+  1611→                variant="ghost"
+  1612→                className="h-6 text-[9px] text-slate-300 hover:text-white hover:bg-slate-700 mt-1"
+  1613→                onClick={handleAutoRecap}
+  1614→                disabled={autoRecapLoading}
+  1615→              >
+  1616→                <Loader2 className={`w-3 h-3 mr-1 ${autoRecapLoading ? 'animate-spin' : ''}`} />
+  1617→                Rekap Harian
+  1618→              </Button>
+  1619→            </div>
+  1620→          </div>
+  1621→        </div>
+  1622→
+  1623→        {/* Tabs */}
+  1624→        <Tabs value={collectionTab} onValueChange={setCollectionTab}>
+  1625→          <TabsList className="w-full flex h-auto flex-wrap gap-1 bg-slate-100 p-1 rounded-lg">
+  1626→            <TabsTrigger value="tarikan" className="text-xs flex-1 min-w-0 data-[state=active]:bg-white data-[state=active]:shadow-sm rounded-md">
+  1627→              <HandCoins className="w-3.5 h-3.5 mr-1 text-amber-500" />
+  1628→              <span className="hidden sm:inline">Tarikan Warga</span>
+  1629→              <span className="sm:hidden">Tarikan</span>
+  1630→            </TabsTrigger>
+  1631→            <TabsTrigger value="ronda-group" className="text-xs flex-1 min-w-0 data-[state=active]:bg-white data-[state=active]:shadow-sm rounded-md">
+  1632→              <Shield className="w-3.5 h-3.5 mr-1 text-slate-500" />
+  1633→              <span className="hidden sm:inline">Setoran Ronda</span>
+  1634→              <span className="sm:hidden">Ronda</span>
+  1635→            </TabsTrigger>
+  1636→            <TabsTrigger value="ronda-levy-fine" className="text-xs flex-1 min-w-0 data-[state=active]:bg-white data-[state=active]:shadow-sm rounded-md">
+  1637→              <Banknote className="w-3.5 h-3.5 mr-1 text-slate-500" />
+  1638→              <span className="hidden sm:inline">Denda & Lainnya</span>
+  1639→              <span className="sm:hidden">Lainnya</span>
+  1640→            </TabsTrigger>
+  1641→          </TabsList>
+  1642→
+  1643→          {/* Tab 1: Tarikan Warga */}
+  1644→          <TabsContent value="tarikan">
+  1645→            {renderTarikanWargaTab()}
+  1646→          </TabsContent>
+  1647→
+  1648→          {/* Tab 2: Setoran Ronda Grup */}
+  1649→          <TabsContent value="ronda-group">
+  1650→            {renderRondaGroupTab(recap)}
+  1651→          </TabsContent>
+  1652→
+  1653→          {/* Tab 3: Denda & Lainnya */}
+  1654→          <TabsContent value="ronda-levy-fine">
+  1655→            {renderRondaLevyFineTab(recap)}
+  1656→          </TabsContent>
+  1657→        </Tabs>
+  1658→
+  1659→        {/* Bottom Bar */}
+  1660→        <div className="sticky bottom-0 z-10 rounded-xl border bg-white shadow-lg p-3">
+  1661→          <div className="flex items-center justify-between gap-3">
+  1662→            <div className="flex items-center gap-2">
+  1663→              <div className="w-8 h-8 rounded-lg bg-emerald-100 flex items-center justify-center">
+  1664→                <CircleDollarSign className="w-4 h-4 text-emerald-700" />
+  1665→              </div>
+  1666→              <div>
+  1667→                <p className="text-[10px] text-slate-500 uppercase font-medium">Total Hari Ini</p>
+  1668→                <p className="text-sm font-bold text-emerald-700">{formatCurrency(sessionCollected)}</p>
+  1669→              </div>
+  1670→            </div>
+  1671→            <div className="flex items-center gap-2">
+  1672→              <Button
+  1673→                size="sm"
+  1674→                variant="outline"
+  1675→                className="h-9 text-xs border-slate-300"
+  1676→                onClick={handleExportPdf}
+  1677→                disabled={exportingPdf}
+  1678→              >
+  1679→                {exportingPdf ? <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" /> : <FileDown className="w-3.5 h-3.5 mr-1" />}
+  1680→                Rekap
+  1681→              </Button>
+  1682→              <Button
+  1683→                size="sm"
+  1684→                variant="outline"
+  1685→                className="h-9 text-xs border-slate-300"
+  1686→                onClick={handleExportWargaPdf}
+  1687→                disabled={exportingWargaPdf}
+  1688→              >
+  1689→                {exportingWargaPdf ? <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" /> : <Users className="w-3.5 h-3.5 mr-1" />}
+  1690→                Warga
+  1691→              </Button>
+  1692→              <Button
+  1693→                size="sm"
+  1694→                variant="outline"
+  1695→                className="h-9 text-xs"
+  1696→                onClick={exitCollectionMode}
+  1697→              >
+  1698→                <ArrowLeft className="w-3.5 h-3.5 mr-1" />
+  1699→                Kembali
+  1700→              </Button>
+  1701→              <Button
+  1702→                size="sm"
+  1703→                className="h-9 bg-emerald-600 hover:bg-emerald-700 text-white text-xs"
+  1704→                onClick={() => { setCompletingId(upcoming.id); setCompleteOpen(true); }}
+  1705→              >
+  1706→                <CheckCircle2 className="w-3.5 h-3.5 mr-1" />
+  1707→                Selesai
+  1708→              </Button>
+  1709→            </div>
+  1710→          </div>
+  1711→        </div>
+  1712→      </div>
+  1713→    );
+  1714→  };
+  1715→
+  1716→  // ----------------------------------------
+  1717→  // Tab 1: Tarikan Warga (Consolidated Per-Family View)
+  1718→  // ----------------------------------------
+  1719→
+  1720→  const renderTarikanWargaTab = () => {
+  1721→    if (loadingTarikan && !tarikanData) {
+  1722→      return (
+  1723→        <Card className="rounded-xl border shadow-sm">
+  1724→          <CardContent className="p-8 text-center">
+  1725→            <Loader2 className="w-6 h-6 animate-spin text-slate-400 mx-auto mb-2" />
+  1726→            <p className="text-sm text-slate-500">Memuat data tarikan warga...</p>
+  1727→          </CardContent>
+  1728→        </Card>
+  1729→      );
+  1730→    }
+  1731→
+  1732→    if (!tarikanData) {
+  1733→      return (
+  1734→        <Card className="rounded-xl border shadow-sm">
+  1735→          <CardContent className="p-8 text-center">
+  1736→            <HandCoins className="w-8 h-8 text-slate-300 mx-auto mb-2" />
+  1737→            <p className="text-sm text-slate-500">Data tarikan belum dimuat</p>
+  1738→            <Button size="sm" className="mt-3 bg-slate-800 hover:bg-slate-700 text-white text-xs" onClick={() => upcoming && fetchTarikan(upcoming.id)}>
+  1739→              Muat Tarikan
+  1740→            </Button>
+  1741→          </CardContent>
+  1742→        </Card>
+  1743→      );
+  1744→    }
+  1745→
+  1746→    const { tarikan, totals, monthsSpanned } = tarikanData;
+  1747→
+  1748→    if (tarikan.length === 0) {
+  1749→      return (
+  1750→        <Card className="rounded-xl border shadow-sm">
+  1751→          <CardContent className="p-6 text-center">
+  1752→            <CheckCircle2 className="w-8 h-8 text-emerald-400 mx-auto mb-2" />
+  1753→            <p className="text-sm text-slate-500">Tidak ada data tarikan</p>
+  1754→          </CardContent>
+  1755→        </Card>
+  1756→      );
+  1757→    }
+  1758→
+  1759→    const { daysElapsed = 0, jimpitanAmount = 1000 } = tarikanData;
+  1760→
+  1761→    return (
+  1762→      <div className="space-y-3">
+  1763→        {/* Summary Cards */}
+  1764→        <div className="grid grid-cols-2 md:grid-cols-6 gap-2">
+  1765→          <div className="rounded-lg border bg-slate-50 p-2.5">
+  1766→            <p className="text-[9px] text-slate-500 font-medium uppercase">Total Harus Bayar</p>
+  1767→            <p className="text-sm font-bold text-slate-800">{formatCurrency(totals.totalHarusBayar)}</p>
+  1768→          </div>
+  1769→          <div className="rounded-lg border bg-emerald-50 p-2.5">
+  1770→            <p className="text-[9px] text-emerald-600 font-medium uppercase">Sudah Dibayar</p>
+  1771→            <p className="text-sm font-bold text-emerald-700">{formatCurrency(totals.totalSudahBayar)}</p>
+  1772→          </div>
+  1773→          <div className="rounded-lg border bg-red-50 p-2.5">
+  1774→            <p className="text-[9px] text-red-600 font-medium uppercase">Sisa Belum Bayar</p>
+  1775→            <p className="text-sm font-bold text-red-700">{formatCurrency(totals.totalSisaDepan)}</p>
+  1776→          </div>
+  1777→          <div className="rounded-lg border bg-amber-50 p-2.5">
+  1778→            <p className="text-[9px] text-amber-600 font-medium uppercase">KK Dengan Sisa</p>
+  1779→            <p className="text-sm font-bold text-amber-700">{totals.familiesWithSisa}/{totals.familiesTotal}</p>
+  1780→          </div>
+  1781→          <div className="rounded-lg border bg-sky-50 p-2.5">
+  1782→            <p className="text-[9px] text-sky-600 font-medium uppercase">Hari Ke / 35</p>
+  1783→            <p className="text-sm font-bold text-sky-700">{daysElapsed}/35</p>
+  1784→            <p className="text-[8px] text-sky-400">{formatCurrency(jimpitanAmount)}/hari</p>
+  1785→          </div>
+  1786→          <div className="rounded-lg border bg-violet-50 p-2.5">
+  1787→            <p className="text-[9px] text-violet-600 font-medium uppercase">Bulan Ditempuh</p>
+  1788→            <p className="text-sm font-bold text-violet-700">{monthsSpanned} bln</p>
+  1789→          </div>
+  1790→        </div>
+  1791→
+  1792→        {/* Consolidated Family Table */}
+  1793→        <div className="rounded-xl border bg-white shadow-sm overflow-hidden">
+  1794→          <div className="p-2.5 border-b bg-slate-50/50 flex items-center justify-between">
+  1795→            <h3 className="text-xs font-semibold text-slate-700 flex items-center gap-1">
+  1796→              <HandCoins className="w-3.5 h-3.5 text-amber-500" />
+  1797→              Tarikan Warga ({tarikan.length} KK)
+  1798→            </h3>
+  1799→            <Button
+  1800→              size="sm"
+  1801→              variant="ghost"
+  1802→              className="h-7 text-[10px] text-slate-500 hover:text-slate-700"
+  1803→              onClick={() => upcoming && fetchTarikan(upcoming.id)}
+  1804→              disabled={loadingTarikan}
+  1805→            >
+  1806→              <Loader2 className={`w-3 h-3 mr-1 ${loadingTarikan ? 'animate-spin' : ''}`} />
+  1807→              Refresh
+  1808→            </Button>
+  1809→          </div>
+  1810→          <div className="overflow-x-auto">
+  1811→            <table className="w-full text-xs">
+  1812→              <thead>
+  1813→                <tr className="bg-slate-50/80 border-b">
+  1814→                  <th className="text-left p-2 font-semibold text-slate-600 w-8 text-center">No</th>
+  1815→                  <th className="text-left p-2 font-semibold text-slate-600 min-w-[100px]">Nama KK</th>
+  1816→                  <th className="text-right p-2 font-semibold text-red-600 min-w-[70px]">Sisa</th>
+  1817→                  <th className="text-right p-2 font-semibold text-amber-600 min-w-[70px]">Jimpitan</th>
+  1818→                  <th className="text-right p-2 font-semibold text-slate-600 min-w-[70px]">Iuran Bulanan</th>
+  1819→                  <th className="text-right p-2 font-semibold text-slate-600 min-w-[65px]">Iuran Ronda</th>
+  1820→                  <th className="text-right p-2 font-semibold text-slate-800 min-w-[80px]">Total Bayar</th>
+  1821→                  <th className="text-right p-2 font-semibold text-emerald-600 min-w-[75px]">Bayar</th>
+  1822→                  <th className="text-right p-2 font-semibold text-red-600 min-w-[75px]">Sisa Depan</th>
+  1823→                  <th className="text-center p-2 font-semibold text-slate-600 w-14">Catat</th>
+  1824→                </tr>
+  1825→              </thead>
+  1826→              <tbody>
+  1827→                {tarikan.map((t, idx) => {
+  1828→                  const key = `tarikan-${t.familyId}`;
+  1829→                  const inputVal = collectInputs[key] ?? String(t.sisaDepan);
+  1830→                  const inputNum = parseInt(inputVal.replace(/\D/g, '')) || 0;
+  1831→                  const isSubmitting = submittingKey === key;
+  1832→                  const isLunas = t.jumlahBayar >= t.totalHarusBayar && t.totalHarusBayar > 0;
+  1833→                  const liveSisaDepan = t.totalHarusBayar - t.jumlahBayar - inputNum;
+  1834→                  const hasSisa = t.sisaDepan > 0;
+  1835→                  const noteVal = collectNotes[key] ?? '';
+  1836→
+  1837→                  return (
+  1838→                    <tr
+  1839→                      key={key}
+  1840→                      className={`border-b ${isLunas ? 'bg-emerald-50/50' : hasSisa ? 'bg-red-50/30' : idx % 2 === 0 ? 'bg-white' : 'bg-slate-50/30'}`}
+  1841→                    >
+  1842→                      <td className="p-2 text-slate-400 text-center">{idx + 1}</td>
+  1843→                      <td className="p-2 font-medium text-slate-800">
+  1844→                        <div>
+  1845→                          <span className="text-[11px]">{t.familyHead}</span>
+  1846→                          {isLunas && (
+  1847→                            <Badge className="ml-1 text-[8px] bg-emerald-100 text-emerald-700 px-1 py-0">✓ LUNAS</Badge>
+  1848→                          )}
+  1849→                          {t.jimpitanType === 'BULANAN' && t.rondaGroup && (
+  1850→                            <p className="text-[9px] text-slate-400 font-normal">{t.rondaGroup.name}</p>
+  1851→                          )}
+  1852→                          {t.jimpitanType === 'HARIAN' && t.rondaGroup && (
+  1853→                            <p className="text-[9px] text-slate-400 font-normal">{t.rondaGroup.name}</p>
+  1854→                          )}
+  1855→                        </div>
+  1856→                      </td>
+  1857→                      <td className="p-2 text-right">
+  1858→                        {t.sisaTarikan > 0 ? (
+  1859→                          <div>
+  1860→                            <span className="text-red-600 font-medium">{formatCurrency(t.sisaTarikan)}</span>
+  1861→                            {t.prevFromSelapanan && (
+  1862→                              <p className="text-[8px] text-red-400 font-normal">dari selapanan ke-{t.prevFromSelapanan}</p>
+  1863→                            )}
+  1864→                          </div>
+  1865→                        ) : (
+  1866→                          <span className="text-slate-300">-</span>
+  1867→                        )}
+  1868→                      </td>
+  1869→                      <td className="p-2 text-right">
+  1870→                        {t.jimpitanType === 'HARIAN' && t.kuranganJimpitan > 0 ? (
+  1871→                          <div>
+  1872→                            <span className="text-amber-600 font-medium">{formatCurrency(t.kuranganJimpitan)}</span>
+  1873→                            <p className="text-[8px] text-amber-400 font-normal">{daysElapsed}×{formatCurrency(jimpitanAmount)}</p>
+  1874→                          </div>
+  1875→                        ) : t.jimpitanType === 'HARIAN' ? (
+  1876→                          <span className="text-emerald-500 text-[10px]">✓ Lunas</span>
+  1877→                        ) : (
+  1878→                          <span className="text-slate-300">-</span>
+  1879→                        )}
+  1880→                      </td>
+  1881→                      <td className="p-2 text-right">
+  1882→                        {t.jimpitanType === 'BULANAN' && t.iuranBulanan > 0 ? (
+  1883→                          <div>
+  1884→                            <span className="text-slate-700 font-medium">{formatCurrency(t.iuranBulanan)}</span>
+  1885→                            <p className="text-[8px] text-slate-400 font-normal">×{t.monthsSpanned} bln</p>
+  1886→                          </div>
+  1887→                        ) : (
+  1888→                          <span className="text-slate-300">-</span>
+  1889→                        )}
+  1890→                      </td>
+  1891→                      <td className="p-2 text-right">
+  1892→                        {t.rondaStatus === 'BAYAR_IURAN' && t.iuranRonda > 0 ? (
+  1893→                          <span className="text-sky-600 font-medium">{formatCurrency(t.iuranRonda)}</span>
+  1894→                        ) : (
+  1895→                          <span className="text-slate-300">-</span>
+  1896→                        )}
+  1897→                      </td>
+  1898→                      <td className="p-2 text-right font-bold text-slate-800">
+  1899→                        {formatCurrency(t.totalHarusBayar)}
+  1900→                      </td>
+  1901→                      <td className="p-2 text-right">
+  1902→                        <Input
+  1903→                          type="text"
+  1904→                          inputMode="numeric"
+  1905→                          className="h-7 text-[11px] w-full min-w-[70px]"
+  1906→                          value={inputVal}
+  1907→                          placeholder="0"
+  1908→                          disabled={isLunas || isSubmitting}
+  1909→                          onChange={e => setCollectInputs(prev => ({ ...prev, [key]: e.target.value }))}
+  1910→                          onFocus={() => {
+  1911→                            if (!collectInputs[key]) {
+  1912→                              setCollectInputs(prev => ({ ...prev, [key]: String(t.sisaDepan) }));
+  1913→                            }
+  1914→                          }}
+  1915→                        />
+  1916→                        {/* Collapsible notes input */}
+  1917→                        <Collapsible>
+  1918→                          <CollapsibleTrigger asChild>
+  1919→                            <button className="text-[9px] text-slate-400 hover:text-slate-600 mt-0.5 flex items-center gap-0.5">
+  1920→                              {noteVal ? <span className="text-amber-600">📝</span> : <span>📝 Catatan</span>}
+  1921→                            </button>
+  1922→                          </CollapsibleTrigger>
+  1923→                          <CollapsibleContent>
+  1924→                            <Input
+  1925→                              type="text"
+  1926→                              className="h-6 text-[10px] w-full mt-1"
+  1927→                              value={noteVal}
+  1928→                              placeholder="Catatan..."
+  1929→                              disabled={isLunas || isSubmitting}
+  1930→                              onChange={e => setCollectNotes(prev => ({ ...prev, [key]: e.target.value }))}
+  1931→                            />
+  1932→                          </CollapsibleContent>
+  1933→                        </Collapsible>
+  1934→                      </td>
+  1935→                      <td className={`p-2 text-right font-bold ${liveSisaDepan > 0 ? 'text-red-600' : liveSisaDepan === 0 ? 'text-emerald-600' : 'text-emerald-600'}`}>
+  1936→                        {liveSisaDepan > 0 ? formatCurrency(liveSisaDepan) : '✓'}
+  1937→                      </td>
+  1938→                      <td className="p-2 text-center">
+  1939→                        <Button
+  1940→                          size="sm"
+  1941→                          className="h-6 bg-slate-800 hover:bg-slate-700 text-white text-[9px] px-1.5 min-w-[40px]"
+  1942→                          disabled={isLunas || isSubmitting || inputNum <= 0}
+  1943→                          onClick={() => handleCollectTarikan(key, t.familyId, inputNum, noteVal || undefined)}
+  1944→                        >
+  1945→                          {isSubmitting ? <Loader2 className="w-3 h-3 animate-spin" /> : 'Catat'}
+  1946→                        </Button>
+  1947→                      </td>
+  1948→                    </tr>
+  1949→                  );
+  1950→                })}
+  1951→              </tbody>
+  1952→              {/* Totals Row */}
+  1953→              <tfoot>
+  1954→                <tr className="bg-slate-100 border-t-2 border-slate-300 font-bold">
+  1955→                  <td className="p-2 text-slate-500" colSpan={2}>TOTAL</td>
+  1956→                  <td className="p-2 text-right text-red-600">{formatCurrency(totals.totalSisaTarikan)}</td>
+  1957→                  <td className="p-2 text-right text-amber-600">{formatCurrency(totals.totalKuranganJimpitan)}</td>
+  1958→                  <td className="p-2 text-right text-slate-700">{formatCurrency(totals.totalIuranBulanan)}</td>
+  1959→                  <td className="p-2 text-right text-sky-600">{formatCurrency(totals.totalIuranRonda)}</td>
+  1960→                  <td className="p-2 text-right text-slate-800">{formatCurrency(totals.totalHarusBayar)}</td>
+  1961→                  <td className="p-2 text-right text-emerald-700">{formatCurrency(totals.totalSudahBayar)}</td>
+  1962→                  <td className="p-2 text-right text-red-600">{formatCurrency(totals.totalSisaDepan)}</td>
+  1963→                  <td className="p-2"></td>
+  1964→                </tr>
+  1965→              </tfoot>
+  1966→            </table>
+  1967→          </div>
+  1968→        </div>
+  1969→
+  1970→        {/* Link to daily matrix */}
+  1971→        {upcoming && (
+  1972→          <Button
+  1973→            size="sm"
+  1974→            className="w-full h-10 bg-teal-600 hover:bg-teal-700 text-white text-xs"
+  1975→            onClick={() => { exitCollectionMode(); fetchDailyMatrix(upcoming.id); }}
+  1976→            disabled={loadingDailyMatrix}
+  1977→          >
+  1978→            {loadingDailyMatrix ? <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" /> : <Eye className="w-3.5 h-3.5 mr-1" />}
+  1979→            Lihat Rekap Harian 35 Hari — Detail Per Warga Per Hari
+  1980→          </Button>
+  1981→        )}
+  1982→      </div>
+  1983→    );
+  1984→  };
+  1985→
+  1986→  const renderRondaGroupTab = (recap: RecapData) => {
+  1987→    const groups = recap.jimpitanByGroup;
+  1988→
+  1989→    if (groups.length === 0) {
+  1990→      return (
+  1991→        <Card className="rounded-xl border shadow-sm">
+  1992→          <CardContent className="p-6 text-center">
+  1993→            <Shield className="w-8 h-8 text-slate-300 mx-auto mb-2" />
+  1994→            <p className="text-sm text-slate-500">Tidak ada data grup ronda</p>
+  1995→          </CardContent>
+  1996→        </Card>
+  1997→      );
+  1998→    }
+  1999→
+  2000→    return (
+
+[showing lines 1-2000 of 2519; use offset=2001 with limit to continue reading]
