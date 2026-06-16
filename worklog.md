@@ -27,3 +27,30 @@ Stage Summary:
 - Selapanan #179: 16/35 days elapsed, 57 HARIAN families each owe Rp16.000 kurangan
 - Total tarikan: Rp2.157.000 (69 families including BULANAN and BAYAR_IURAN)
 - All features verified working in browser
+
+---
+Task ID: 1
+Agent: Main
+Task: Build Export to PDF feature for Selapanan recap and warga data
+
+Work Log:
+- Installed jspdf@4.2.1 and jspdf-autotable@5.0.8
+- Created API route `/api/selapanan/export-pdf/route.ts` that generates A4 PDF with:
+  - Section A: Rekap Tarikan Warga (9-column table: No, Nama KK, Sisa, Jimpitan, Iuran Bulanan, Iuran Ronda, Total Bayar, Sudah Bayar, Sisa Depan)
+  - Section B: Rekap Mingguan Jimpitan Harian (7-column table: Minggu, Tanggal, Hari, Target, Terkumpul, Kurangan, %)
+  - Section C: Data Warga (6-column table: No, Nama KK, Alamat, Jimpitan, Status Ronda, Grup Ronda)
+  - Signature area (Ketua RT, Sekretaris, Bendahara)
+  - Page numbers and print timestamp
+- Added `exportingPdf` state and `handleExportPdf` handler to selapanan-page.tsx
+- Added "Export PDF" button in admin actions area (selapanan preview mode)
+- Added "PDF" button in collection mode bottom bar
+- Fixed auth token key from `token` to `auth_token`
+- Optimized PDF: compress=true, narrow margins (10mm), Helvetica font (closest to Calibri), ellipsize overflow
+- Fixed column widths to fill 190mm content width (no overflow warnings)
+- PDF file size: ~22KB (4 pages, optimized)
+
+Stage Summary:
+- Feature complete and tested via Agent Browser
+- PDF downloads successfully with proper filename: Rekap_Selapanan_{number}_{date}.pdf
+- All lint checks pass (0 errors)
+- No runtime errors in dev server

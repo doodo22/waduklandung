@@ -73,6 +73,7 @@ import {
   ArrowLeft,
   Eye,
   TrendingUp,
+  FileDown,
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -248,6 +249,7 @@ export function SelapananPage({ userId, familyId, isAdmin }: Props) {
   } | null>(null);
   const [loadingDailyMatrix, setLoadingDailyMatrix] = useState(false);
   const [dailyMatrixWeek, setDailyMatrixWeek] = useState<number>(0); // 0 = all weeks
+  const [exportingPdf, setExportingPdf] = useState(false);
 
   // ----------------------------------------
   // Data Fetching
@@ -625,6 +627,40 @@ export function SelapananPage({ userId, familyId, isAdmin }: Props) {
     setShowDailyMatrix(false);
     setDailyMatrixData(null);
     setDailyMatrixWeek(0);
+  };
+
+  // ----------------------------------------
+  // Export PDF
+  // ----------------------------------------
+
+  const handleExportPdf = async () => {
+    if (!upcoming) return;
+    setExportingPdf(true);
+    try {
+      const token = localStorage.getItem('auth_token');
+      const res = await fetch(`/api/selapanan/export-pdf?selapananId=${upcoming.id}`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+      if (res.ok) {
+        const blob = await res.blob();
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `Rekap_Selapanan_${upcoming.number}_${new Date().toISOString().split('T')[0]}.pdf`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        window.URL.revokeObjectURL(url);
+        toast.success('PDF berhasil diunduh');
+      } else {
+        const data = await res.json().catch(() => ({}));
+        toast.error(data.error || 'Gagal mengekspor PDF');
+      }
+    } catch {
+      toast.error('Terjadi kesalahan saat mengekspor PDF');
+    } finally {
+      setExportingPdf(false);
+    }
   };
 
   // ----------------------------------------
@@ -1444,6 +1480,16 @@ export function SelapananPage({ userId, familyId, isAdmin }: Props) {
                       <CheckCircle2 className="w-3.5 h-3.5 mr-1" />
                       Selesaikan Selapanan
                     </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="h-9 text-xs border-slate-300"
+                      onClick={handleExportPdf}
+                      disabled={exportingPdf}
+                    >
+                      {exportingPdf ? <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" /> : <FileDown className="w-3.5 h-3.5 mr-1" />}
+                      Export PDF
+                    </Button>
                   </div>
                 )}
               </div>
@@ -1586,11 +1632,21 @@ export function SelapananPage({ userId, familyId, isAdmin }: Props) {
               <Button
                 size="sm"
                 variant="outline"
+                className="h-9 text-xs border-slate-300"
+                onClick={handleExportPdf}
+                disabled={exportingPdf}
+              >
+                {exportingPdf ? <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" /> : <FileDown className="w-3.5 h-3.5 mr-1" />}
+                PDF
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
                 className="h-9 text-xs"
                 onClick={exitCollectionMode}
               >
                 <ArrowLeft className="w-3.5 h-3.5 mr-1" />
-                Kembali ke Preview
+                Kembali
               </Button>
               <Button
                 size="sm"
@@ -1598,7 +1654,7 @@ export function SelapananPage({ userId, familyId, isAdmin }: Props) {
                 onClick={() => { setCompletingId(upcoming.id); setCompleteOpen(true); }}
               >
                 <CheckCircle2 className="w-3.5 h-3.5 mr-1" />
-                Selesaikan Selapanan
+                Selesai
               </Button>
             </div>
           </div>

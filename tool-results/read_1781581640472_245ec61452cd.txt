@@ -1,0 +1,804 @@
+     1→'use client';
+     2→
+     3→import { useState, useEffect } from 'react';
+     4→import { api } from '@/lib/api-client';
+     5→import {
+     6→  formatCurrency,
+     7→  formatDate,
+     8→  formatDateShort,
+     9→  SELAPANAN_STATUS_LABELS,
+    10→} from '@/lib/constants';
+    11→import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+    12→import { Badge } from '@/components/ui/badge';
+    13→import { Button } from '@/components/ui/button';
+    14→import {
+    15→  Calendar,
+    16→  MapPin,
+    17→  CheckCircle,
+    18→  AlertCircle,
+    19→  Clock,
+    20→  FileText,
+    21→  ChevronDown,
+    22→  ChevronUp,
+    23→  Sparkles,
+    24→  Users,
+    25→  Eye,
+    26→  Loader2,
+    27→  TrendingUp,
+    28→  ArrowLeft,
+    29→  XCircle,
+    30→} from 'lucide-react';
+    31→
+    32→interface SelapananWargaPageProps {
+    33→  userId: string;
+    34→  familyId: string | null;
+    35→  isAdmin: boolean;
+    36→}
+    37→
+    38→interface SelapananDetail {
+    39→  id: string;
+    40→  selapananId: string;
+    41→  agenda: string;
+    42→  decisions: string | null;
+    43→  notes: string | null;
+    44→}
+    45→
+    46→interface Selapanan {
+    47→  id: string;
+    48→  periodeStart: string;
+    49→  periodeEnd: string;
+    50→  meetingDate: string;
+    51→  meetingLocation: string | null;
+    52→  status: string;
+    53→  notes: string | null;
+    54→  details: SelapananDetail[];
+    55→}
+    56→
+    57→interface ShortageEntry {
+    58→  familyId: string;
+    59→  familyHead: string;
+    60→  totalShortage: number;
+    61→  settledAmount: number;
+    62→  isSettled: boolean;
+    63→  carriedOver: boolean;
+    64→  notes: string | null;
+    65→}
+    66→
+    67→interface ShortageSummary {
+    68→  selapananId: string;
+    69→  periodeStart: string;
+    70→  periodeEnd: string;
+    71→  status: string;
+    72→  totalShortage: number;
+    73→  totalSettled: number;
+    74→  totalRemaining: number;
+    75→  familyCount: number;
+    76→  unsettledCount: number;
+    77→  shortages: ShortageEntry[];
+    78→}
+    79→
+    80→interface DailyData {
+    81→  date: string;
+    82→  dayOfWeek: number;
+    83→  dayName: string;
+    84→  nightLabel: string;
+    85→  weekNumber: number;
+    86→  dayInWeek: number;
+    87→  groupName: string | null;
+    88→  isFuture: boolean;
+    89→  isToday: boolean;
+    90→  paidAmount: number;
+    91→  shortage: number;
+    92→  expectedAmount: number;
+    93→  status: 'PAID' | 'PARTIAL' | 'UNPAID' | 'FUTURE';
+    94→}
+    95→
+    96→const STATUS_COLORS: Record<string, string> = {
+    97→  UPCOMING: 'bg-amber-100 text-amber-800',
+    98→  COMPLETED: 'bg-emerald-100 text-emerald-800',
+    99→  CANCELLED: 'bg-rose-100 text-rose-800',
+   100→};
+   101→
+   102→const DAY_LABELS: Record<number, string> = {
+   103→  0: 'Mal. Minggu', 1: 'Mal. Senin', 2: 'Mal. Selasa',
+   104→  3: 'Mal. Rabu', 4: 'Mal. Kamis', 5: 'Mal. Jumat', 6: 'Mal. Sabtu',
+   105→};
+   106→
+   107→export function SelapananPage({ userId, familyId, isAdmin }: SelapananWargaPageProps) {
+   108→  const [selapananList, setSelapananList] = useState<Selapanan[]>([]);
+   109→  const [shortageData, setShortageData] = useState<ShortageSummary[]>([]);
+   110→  const [loading, setLoading] = useState(true);
+   111→  const [expandedId, setExpandedId] = useState<string | null>(null);
+   112→
+   113→  // Daily history state
+   114→  const [showDailyHistory, setShowDailyHistory] = useState(false);
+   115→  const [dailyHistoryData, setDailyHistoryData] = useState<{
+   116→    family: { id: string; familyHead: string; jimpitanType: string; jimpitanAmount: number };
+   117→    selapanan: { id: string; number: number; periodeStart: string; periodeEnd: string; meetingDate: string };
+   118→    isBulanan: boolean;
+   119→    monthlyAmount?: number;
+   120→    jimpitanAmount: number;
+   121→    dailyData: DailyData[];
+   122→    summary: {
+   123→      totalDays: number;
+   124→      daysElapsed: number;
+   125→      daysRemaining: number;
+   126→      totalExpected: number;
+   127→      totalPaid: number;
+   128→      totalShortage: number;
+   129→      daysPaid: number;
+   130→      daysPartial: number;
+   131→      daysMissed: number;
+   132→      paymentRate: number;
+   133→    };
+   134→  } | null>(null);
+   135→  const [loadingDailyHistory, setLoadingDailyHistory] = useState(false);
+   136→
+   137→  useEffect(() => {
+   138→    loadData();
+   139→  }, [userId, familyId]);
+   140→
+   141→  const loadData = async () => {
+   142→    try {
+   143→      setLoading(true);
+   144→
+   145→      const [selapananRes, shortagesRes] = await Promise.all([
+   146→        api.get('/selapanan'),
+   147→        api.get('/jimpitan/shortages'),
+   148→      ]);
+   149→
+   150→      if (selapananRes.ok) {
+   151→        const data = await selapananRes.json();
+   152→        setSelapananList(data.selapanan || []);
+   153→      }
+   154→
+   155→      if (shortagesRes.ok) {
+   156→        const data = await shortagesRes.json();
+   157→        setShortageData(data.summary || []);
+   158→      }
+   159→    } catch (error) {
+   160→      console.error('Failed to load selapanan data:', error);
+   161→    } finally {
+   162→      setLoading(false);
+   163→    }
+   164→  };
+   165→
+   166→  const fetchDailyHistory = async (selapananId?: string) => {
+   167→    if (!familyId) return;
+   168→    setLoadingDailyHistory(true);
+   169→    try {
+   170→      const url = selapananId
+   171→        ? `/jimpitan/my-daily?selapananId=${selapananId}`
+   172→        : '/jimpitan/my-daily';
+   173→      const res = await api.get(url);
+   174→      if (res.ok) {
+   175→        const data = await res.json();
+   176→        setDailyHistoryData(data);
+   177→        setShowDailyHistory(true);
+   178→      } else {
+   179→        const errData = await res.json().catch(() => ({}));
+   180→        console.error('Failed to load daily history:', errData);
+   181→      }
+   182→    } catch (error) {
+   183→      console.error('Failed to load daily history:', error);
+   184→    } finally {
+   185→      setLoadingDailyHistory(false);
+   186→    }
+   187→  };
+   188→
+   189→  const exitDailyHistory = () => {
+   190→    setShowDailyHistory(false);
+   191→    setDailyHistoryData(null);
+   192→  };
+   193→
+   194→  const getMyShortage = (selapananId: string): ShortageEntry | null => {
+   195→    for (const summary of shortageData) {
+   196→      if (summary.selapananId === selapananId) {
+   197→        const mine = summary.shortages.find((s) => s.familyId === familyId);
+   198→        if (mine) return mine;
+   199→      }
+   200→    }
+   201→    return null;
+   202→  };
+   203→
+   204→  const getTotalUnpaidShortage = (): number => {
+   205→    if (!familyId) return 0;
+   206→    let total = 0;
+   207→    for (const summary of shortageData) {
+   208→      for (const shortage of summary.shortages) {
+   209→        if (shortage.familyId === familyId && !shortage.isSettled) {
+   210→          total += shortage.totalShortage - shortage.settledAmount;
+   211→        }
+   212→      }
+   213→    }
+   214→    return total;
+   215→  };
+   216→
+   217→  const upcomingSelapanan = selapananList.find(
+   218→    (s) => s.status === 'UPCOMING'
+   219→  );
+   220→
+   221→  const pastWithShortages = selapananList.filter(
+   222→    (s) => s.status === 'COMPLETED' && getMyShortage(s.id)
+   223→  );
+   224→
+   225→  const myShortageForUpcoming = upcomingSelapanan
+   226→    ? getMyShortage(upcomingSelapanan.id)
+   227→    : null;
+   228→
+   229→  const totalUnpaid = getTotalUnpaidShortage();
+   230→
+   231→  if (loading) {
+   232→    return (
+   233→      <div className="space-y-4">
+   234→        {[1, 2, 3].map((i) => (
+   235→          <Card key={i} className="rounded-2xl shadow-sm border border-orange-100 bg-white/80">
+   236→            <CardContent className="p-4">
+   237→              <div className="animate-pulse space-y-3">
+   238→                <div className="h-4 bg-orange-100 rounded w-3/4" />
+   239→                <div className="h-4 bg-orange-100 rounded w-1/2" />
+   240→              </div>
+   241→            </CardContent>
+   242→          </Card>
+   243→        ))}
+   244→      </div>
+   245→    );
+   246→  }
+   247→
+   248→  // ============================================
+   249→  // Render: Daily History View for Warga
+   250→  // ============================================
+   251→
+   252→  if (showDailyHistory && dailyHistoryData) {
+   253→    const { family, selapanan, isBulanan, jimpitanAmount, dailyData, summary } = dailyHistoryData;
+   254→
+   255→    if (isBulanan) {
+   256→      return (
+   257→        <div className="space-y-4">
+   258→          <Card className="rounded-2xl shadow-sm border border-purple-100 bg-white/90 overflow-hidden">
+   259→            <div className="bg-purple-50 px-4 py-2.5 border-b border-purple-100 flex items-center gap-2">
+   260→              <Calendar className="w-4 h-4 text-purple-700" />
+   261→              <span className="text-xs font-bold text-purple-800 uppercase tracking-wide">Iuran Bulanan</span>
+   262→            </div>
+   263→            <CardContent className="p-4">
+   264→              <div className="text-center py-4">
+   265→                <div className="w-12 h-12 rounded-xl bg-purple-100 flex items-center justify-center mx-auto mb-3">
+   266→                  <Calendar className="w-6 h-6 text-purple-600" />
+   267→                </div>
+   268→                <p className="text-sm font-bold text-stone-800">{family.familyHead}</p>
+   269→                <p className="text-xs text-purple-600 mt-1">Terdaftar sebagai peserta iuran bulanan</p>
+   270→                <p className="text-lg font-bold text-purple-700 mt-2">{formatCurrency(dailyHistoryData.monthlyAmount || family.jimpitanAmount)}/bulan</p>
+   271→              </div>
+   272→            </CardContent>
+   273→          </Card>
+   274→          <Button
+   275→            size="sm"
+   276→            variant="outline"
+   277→            className="w-full h-10 text-xs"
+   278→            onClick={exitDailyHistory}
+   279→          >
+   280→            <ArrowLeft className="w-3.5 h-3.5 mr-1" />
+   281→            Kembali ke Selapanan
+   282→          </Button>
+   283→        </div>
+   284→      );
+   285→    }
+   286→
+   287→    // Group daily data by week
+   288→    const weeks: Record<number, DailyData[]> = {};
+   289→    for (const d of dailyData) {
+   290→      if (!weeks[d.weekNumber]) weeks[d.weekNumber] = [];
+   291→      weeks[d.weekNumber].push(d);
+   292→    }
+   293→
+   294→    return (
+   295→      <div className="space-y-4">
+   296→        {/* Header Card */}
+   297→        <Card className="rounded-2xl shadow-sm border border-teal-100 bg-white/90 overflow-hidden">
+   298→          <div className="bg-gradient-to-r from-teal-600 to-emerald-600 text-white px-4 py-3">
+   299→            <div className="flex items-center justify-between">
+   300→              <div>
+   301→                <p className="text-[10px] uppercase font-bold text-teal-200">Rekap Harian Jimpitan</p>
+   302→                <p className="text-sm font-bold">Selapanan Ke-{selapanan.number}</p>
+   303→                <p className="text-xs text-teal-200 mt-0.5">
+   304→                  {formatDateShort(selapanan.periodeStart)} — {formatDateShort(selapanan.periodeEnd)}
+   305→                </p>
+   306→              </div>
+   307→              <div className="text-right">
+   308→                <p className="text-[10px] text-teal-200">Besaran/Hari</p>
+   309→                <p className="text-lg font-bold">{formatCurrency(jimpitanAmount)}</p>
+   310→              </div>
+   311→            </div>
+   312→          </div>
+   313→          <CardContent className="p-4">
+   314→            {/* Summary Grid */}
+   315→            <div className="grid grid-cols-2 gap-3 mb-4">
+   316→              <div className="rounded-xl bg-emerald-50 border border-emerald-100 p-3 text-center">
+   317→                <p className="text-[10px] text-emerald-600 font-bold uppercase">Lunas</p>
+   318→                <p className="text-2xl font-bold text-emerald-700">{summary.daysPaid}</p>
+   319→                <p className="text-[10px] text-emerald-500">dari {summary.daysElapsed} hari</p>
+   320→              </div>
+   321→              <div className="rounded-xl bg-red-50 border border-red-100 p-3 text-center">
+   322→                <p className="text-[10px] text-red-600 font-bold uppercase">Kekurangan</p>
+   323→                <p className="text-2xl font-bold text-red-600">{formatCurrency(summary.totalShortage)}</p>
+   324→                <p className="text-[10px] text-red-500">{summary.daysMissed} hari tidak bayar</p>
+   325→              </div>
+   326→            </div>
+   327→
+   328→            {/* Payment Rate Bar */}
+   329→            <div className="rounded-xl bg-stone-50 border border-stone-100 p-3">
+   330→              <div className="flex items-center justify-between mb-1">
+   331→                <span className="text-xs font-bold text-stone-700">Tingkat Pembayaran</span>
+   332→                <span className={`text-sm font-bold ${
+   333→                  summary.paymentRate >= 80 ? 'text-emerald-600' : summary.paymentRate >= 50 ? 'text-amber-600' : 'text-red-600'
+   334→                }`}>
+   335→                  {summary.paymentRate}%
+   336→                </span>
+   337→              </div>
+   338→              <div className="h-3 bg-stone-200 rounded-full overflow-hidden">
+   339→                <div
+   340→                  className={`h-3 rounded-full transition-all ${
+   341→                    summary.paymentRate >= 80 ? 'bg-emerald-500' : summary.paymentRate >= 50 ? 'bg-amber-500' : 'bg-red-500'
+   342→                  }`}
+   343→                  style={{ width: `${Math.min(100, summary.paymentRate)}%` }}
+   344→                />
+   345→              </div>
+   346→              <div className="flex justify-between text-[10px] text-stone-400 mt-1">
+   347→                <span>Terkumpul: {formatCurrency(summary.totalPaid)}</span>
+   348→                <span>Target: {formatCurrency(summary.totalExpected)}</span>
+   349→              </div>
+   350→            </div>
+   351→
+   352→            {/* Quick Stats */}
+   353→            <div className="grid grid-cols-3 gap-2 mt-3">
+   354→              <div className="text-center p-2 rounded-lg bg-stone-50">
+   355→                <p className="text-[10px] text-stone-500">Sebagian</p>
+   356→                <p className="text-sm font-bold text-amber-600">{summary.daysPartial}</p>
+   357→              </div>
+   358→              <div className="text-center p-2 rounded-lg bg-stone-50">
+   359→                <p className="text-[10px] text-stone-500">Sisa Hari</p>
+   360→                <p className="text-sm font-bold text-stone-700">{summary.daysRemaining}</p>
+   361→              </div>
+   362→              <div className="text-center p-2 rounded-lg bg-stone-50">
+   363→                <p className="text-[10px] text-stone-500">Tidak Bayar</p>
+   364→                <p className="text-sm font-bold text-red-600">{summary.daysMissed}</p>
+   365→              </div>
+   366→            </div>
+   367→          </CardContent>
+   368→        </Card>
+   369→
+   370→        {/* Weekly Calendar Grid */}
+   371→        {Object.entries(weeks).map(([weekNum, days]) => (
+   372→          <Card key={weekNum} className="rounded-2xl shadow-sm border border-stone-100 bg-white/90 overflow-hidden">
+   373→            <div className="bg-stone-50 px-4 py-2 border-b border-stone-100 flex items-center gap-2">
+   374→              <Calendar className="w-3.5 h-3.5 text-stone-500" />
+   375→              <span className="text-xs font-bold text-stone-700 uppercase tracking-wide">
+   376→                Minggu {weekNum}
+   377→              </span>
+   378→              <span className="text-[10px] text-stone-400 ml-auto">
+   379→                {formatDateShort(days[0]?.date || '')} — {formatDateShort(days[days.length - 1]?.date || '')}
+   380→              </span>
+   381→            </div>
+   382→            <CardContent className="p-3">
+   383→              <div className="space-y-1.5">
+   384→                {days.map(day => {
+   385→                  let statusBg = 'bg-stone-50';
+   386→                  let statusText = 'text-stone-400';
+   387→                  let statusIcon = null;
+   388→                  let statusLabel = '';
+   389→
+   390→                  if (day.isFuture) {
+   391→                    statusBg = 'bg-stone-50';
+   392→                    statusText = 'text-stone-300';
+   393→                    statusLabel = 'Belum';
+   394→                  } else if (day.status === 'PAID') {
+   395→                    statusBg = 'bg-emerald-50';
+   396→                    statusText = 'text-emerald-700';
+   397→                    statusIcon = <CheckCircle className="w-4 h-4 text-emerald-500" />;
+   398→                    statusLabel = 'Lunas';
+   399→                  } else if (day.status === 'PARTIAL') {
+   400→                    statusBg = 'bg-amber-50';
+   401→                    statusText = 'text-amber-700';
+   402→                    statusIcon = <AlertCircle className="w-4 h-4 text-amber-500" />;
+   403→                    statusLabel = `Bayar ${formatCurrency(day.paidAmount)}`;
+   404→                  } else {
+   405→                    statusBg = 'bg-red-50';
+   406→                    statusText = 'text-red-700';
+   407→                    statusIcon = <XCircle className="w-4 h-4 text-red-400" />;
+   408→                    statusLabel = `Kurang ${formatCurrency(day.shortage)}`;
+   409→                  }
+   410→
+   411→                  return (
+   412→                    <div
+   413→                      key={day.date}
+   414→                      className={`flex items-center justify-between rounded-xl p-2.5 ${statusBg} ${day.isToday ? 'ring-2 ring-amber-400' : ''}`}
+   415→                    >
+   416→                      <div className="flex items-center gap-2">
+   417→                        {statusIcon || <div className="w-4 h-4" />}
+   418→                        <div>
+   419→                          <p className={`text-xs font-semibold ${day.isFuture ? 'text-stone-300' : 'text-stone-700'}`}>
+   420→                            {day.nightLabel}
+   421→                          </p>
+   422→                          <p className="text-[10px] text-stone-400">
+   423→                            {day.date.slice(8)}/{day.date.slice(5, 7)}{day.isToday ? ' · Hari ini' : ''}
+   424→                          </p>
+   425→                        </div>
+   426→                      </div>
+   427→                      <div className="text-right">
+   428→                        <p className={`text-xs font-bold ${statusText}`}>
+   429→                          {statusLabel}
+   430→                        </p>
+   431→                        {day.groupName && !day.isFuture && (
+   432→                          <p className="text-[9px] text-stone-400">{day.groupName}</p>
+   433→                        )}
+   434→                      </div>
+   435→                    </div>
+   436→                  );
+   437→                })}
+   438→              </div>
+   439→            </CardContent>
+   440→          </Card>
+   441→        ))}
+   442→
+   443→        {/* Legend */}
+   444→        <div className="flex items-center gap-3 flex-wrap text-[10px] text-stone-500 px-1">
+   445→          <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-emerald-50 border border-emerald-200 inline-block" /> Lunas</span>
+   446→          <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-amber-50 border border-amber-200 inline-block" /> Sebagian</span>
+   447→          <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-red-50 border border-red-200 inline-block" /> Tidak Bayar</span>
+   448→          <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-stone-50 border border-stone-200 inline-block" /> Belum</span>
+   449→        </div>
+   450→
+   451→        {/* Back Button */}
+   452→        <Button
+   453→          size="sm"
+   454→          variant="outline"
+   455→          className="w-full h-10 text-xs"
+   456→          onClick={exitDailyHistory}
+   457→        >
+   458→          <ArrowLeft className="w-3.5 h-3.5 mr-1" />
+   459→          Kembali ke Selapanan
+   460→        </Button>
+   461→      </div>
+   462→    );
+   463→  }
+   464→
+   465→  // ============================================
+   466→  // Default View
+   467→  // ============================================
+   468→
+   469→  return (
+   470→    <div className="space-y-4">
+   471→      {/* Selapanan Mendatang */}
+   472→      <Card className="rounded-2xl shadow-sm border border-amber-100 bg-white/90 overflow-hidden">
+   473→        <div className="bg-amber-50 px-4 py-2.5 border-b border-amber-100 flex items-center gap-2">
+   474→          <Sparkles className="w-4 h-4 text-amber-700" />
+   475→          <span className="text-xs font-bold text-amber-800 uppercase tracking-wide">Selapanan Mendatang</span>
+   476→        </div>
+   477→        <CardContent className="p-4">
+   478→          {upcomingSelapanan ? (
+   479→            <div className="space-y-3">
+   480→              <div className="flex items-center gap-2 mb-1">
+   481→                <Badge className={`font-semibold ${STATUS_COLORS[upcomingSelapanan.status] || 'bg-stone-100 text-stone-700'}`}>
+   482→                  {SELAPANAN_STATUS_LABELS[upcomingSelapanan.status] || upcomingSelapanan.status}
+   483→                </Badge>
+   484→              </div>
+   485→
+   486→              <div className="bg-gradient-to-br from-amber-50 to-orange-50 rounded-xl p-3 space-y-2 border border-amber-100">
+   487→                <div className="flex items-center gap-2">
+   488→                  <Calendar className="w-4 h-4 text-amber-600" />
+   489→                  <span className="text-sm font-bold text-stone-800">
+   490→                    {formatDate(upcomingSelapanan.meetingDate)}
+   491→                  </span>
+   492→                </div>
+   493→
+   494→                {upcomingSelapanan.meetingLocation && (
+   495→                  <div className="flex items-center gap-2">
+   496→                    <MapPin className="w-4 h-4 text-amber-600" />
+   497→                    <span className="text-sm text-stone-600">
+   498→                      {upcomingSelapanan.meetingLocation}
+   499→                    </span>
+   500→                  </div>
+   501→                )}
+   502→
+   503→                <div className="flex items-center gap-2">
+   504→                  <Clock className="w-4 h-4 text-amber-600" />
+   505→                  <span className="text-xs text-stone-500">
+   506→                    Periode: {formatDateShort(upcomingSelapanan.periodeStart)} — {formatDateShort(upcomingSelapanan.periodeEnd)}
+   507→                  </span>
+   508→                </div>
+   509→              </div>
+   510→
+   511→              {upcomingSelapanan.notes && (
+   512→                <p className="text-xs text-stone-500 italic">
+   513→                  {upcomingSelapanan.notes}
+   514→                </p>
+   515→              )}
+   516→
+   517→              {upcomingSelapanan.details.length > 0 && (
+   518→                <div>
+   519→                  <button
+   520→                    onClick={() =>
+   521→                      setExpandedId(
+   522→                        expandedId === upcomingSelapanan.id ? null : upcomingSelapanan.id
+   523→                      )
+   524→                    }
+   525→                    className="flex items-center gap-1 text-xs text-teal-600 hover:text-teal-800 font-semibold transition-colors"
+   526→                  >
+   527→                    <FileText className="w-3.5 h-3.5" />
+   528→                    <span>Lihat Agenda ({upcomingSelapanan.details.length})</span>
+   529→                    {expandedId === upcomingSelapanan.id ? (
+   530→                      <ChevronUp className="w-3.5 h-3.5" />
+   531→                    ) : (
+   532→                      <ChevronDown className="w-3.5 h-3.5" />
+   533→                    )}
+   534→                  </button>
+   535→
+   536→                  {expandedId === upcomingSelapanan.id && (
+   537→                    <div className="mt-2 space-y-2">
+   538→                      {upcomingSelapanan.details.map((detail) => (
+   539→                        <div
+   540→                          key={detail.id}
+   541→                          className="bg-stone-50 rounded-xl p-2.5 border border-stone-100"
+   542→                        >
+   543→                          <p className="text-sm font-semibold text-stone-800">{detail.agenda}</p>
+   544→                          {detail.decisions && (
+   545→                            <p className="text-xs text-stone-500 mt-1">
+   546→                              <span className="font-semibold">Keputusan:</span> {detail.decisions}
+   547→                            </p>
+   548→                          )}
+   549→                          {detail.notes && (
+   550→                            <p className="text-xs text-stone-400 mt-0.5">{detail.notes}</p>
+   551→                          )}
+   552→                        </div>
+   553→                      ))}
+   554→                    </div>
+   555→                  )}
+   556→                </div>
+   557→              )}
+   558→
+   559→              {/* View Daily History Button */}
+   560→              {familyId && (
+   561→                <Button
+   562→                  size="sm"
+   563→                  className="w-full h-10 bg-teal-600 hover:bg-teal-700 text-white text-xs rounded-xl"
+   564→                  onClick={() => fetchDailyHistory(upcomingSelapanan.id)}
+   565→                  disabled={loadingDailyHistory}
+   566→                >
+   567→                  {loadingDailyHistory ? (
+   568→                    <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" />
+   569→                  ) : (
+   570→                    <Eye className="w-3.5 h-3.5 mr-1" />
+   571→                  )}
+   572→                  Lihat Rekap Harian Jimpitan Saya
+   573→                </Button>
+   574→              )}
+   575→            </div>
+   576→          ) : (
+   577→            <div className="text-center py-6">
+   578→              <Calendar className="w-10 h-10 text-orange-200 mx-auto mb-2" />
+   579→              <p className="text-sm font-semibold text-stone-600">Belum ada jadwal selapanan mendatang</p>
+   580→              <p className="text-xs text-stone-500 mt-1">
+   581→                Informasi selapanan berikutnya akan muncul di sini
+   582→              </p>
+   583→            </div>
+   584→          )}
+   585→        </CardContent>
+   586→      </Card>
+   587→
+   588→      {/* Kekurangan Anda */}
+   589→      <Card className="rounded-2xl shadow-sm border border-rose-100 bg-white/90 overflow-hidden">
+   590→        <div className="bg-rose-50 px-4 py-2.5 border-b border-rose-100 flex items-center gap-2">
+   591→          <AlertCircle className="w-4 h-4 text-rose-600" />
+   592→          <span className="text-xs font-bold text-rose-800 uppercase tracking-wide">Kekurangan Anda</span>
+   593→        </div>
+   594→        <CardContent className="p-4">
+   595→          {!familyId ? (
+   596→            <div className="text-center py-4">
+   597→              <AlertCircle className="w-8 h-8 text-orange-200 mx-auto mb-2" />
+   598→              <p className="text-sm text-stone-500">Anda belum terdaftar di keluarga</p>
+   599→            </div>
+   600→          ) : totalUnpaid === 0 ? (
+   601→            <div className="flex items-center gap-3 py-2 px-3 bg-emerald-50 rounded-xl border border-emerald-100">
+   602→              <div className="w-9 h-9 rounded-xl bg-emerald-100 flex items-center justify-center shrink-0">
+   603→                <CheckCircle className="w-5 h-5 text-emerald-600" />
+   604→              </div>
+   605→              <div>
+   606→                <p className="text-sm font-bold text-emerald-700">
+   607→                  Anda tidak memiliki kekurangan iuran
+   608→                </p>
+   609→                <p className="text-xs text-emerald-600">Terima kasih!</p>
+   610→              </div>
+   611→            </div>
+   612→          ) : (
+   613→            <div className="space-y-3">
+   614→              <div className="bg-gradient-to-r from-rose-50 to-orange-50 rounded-xl p-3 border border-rose-100">
+   615→                <p className="text-sm text-stone-600 mb-1 font-medium">Total kekurangan yang akan ditagih</p>
+   616→                <p className="text-2xl font-bold text-rose-600">
+   617→                  {formatCurrency(totalUnpaid)}
+   618→                </p>
+   619→              </div>
+   620→
+   621→              {upcomingSelapanan && (
+   622→                <p className="text-sm text-stone-600">
+   623→                  Harap disiapkan untuk selapanan pada{' '}
+   624→                  <span className="font-bold text-stone-800">
+   625→                    {formatDate(upcomingSelapanan.meetingDate)}
+   626→                  </span>
+   627→                </p>
+   628→              )}
+   629→
+   630→              {shortageData
+   631→                .filter((s) =>
+   632→                  s.shortages.some((sh) => sh.familyId === familyId && !sh.isSettled)
+   633→                )
+   634→                .map((summary) => {
+   635→                  const myShortage = summary.shortages.find(
+   636→                    (sh) => sh.familyId === familyId
+   637→                  );
+   638→                  if (!myShortage || myShortage.isSettled) return null;
+   639→                  const remaining = myShortage.totalShortage - myShortage.settledAmount;
+   640→                  if (remaining <= 0) return null;
+   641→
+   642→                  return (
+   643→                    <div
+   644→                      key={summary.selapananId}
+   645→                      className="bg-stone-50 rounded-xl p-3 border border-stone-100"
+   646→                    >
+   647→                      <p className="text-xs text-stone-500 mb-1 font-semibold">
+   648→                        Periode {formatDateShort(summary.periodeStart)} — {formatDateShort(summary.periodeEnd)}
+   649→                      </p>
+   650→                      <div className="flex items-center justify-between">
+   651→                        <span className="text-sm text-stone-700 font-medium">Kekurangan</span>
+   652→                        <span className="text-sm font-bold text-rose-600">
+   653→                          {formatCurrency(remaining)}
+   654→                        </span>
+   655→                      </div>
+   656→                      {myShortage.carriedOver && (
+   657→                        <p className="text-xs text-amber-600 mt-1 flex items-center gap-1 font-semibold">
+   658→                          <AlertCircle className="w-3 h-3" />
+   659→                          Akumulasi dari periode sebelumnya
+   660→                        </p>
+   661→                      )}
+   662→                    </div>
+   663→                  );
+   664→                })}
+   665→            </div>
+   666→          )}
+   667→        </CardContent>
+   668→      </Card>
+   669→
+   670→      {/* Riwayat Kekurangan */}
+   671→      {pastWithShortages.length > 0 && (
+   672→        <Card className="rounded-2xl shadow-sm border border-orange-100 bg-white/90 overflow-hidden">
+   673→          <div className="bg-orange-50 px-4 py-2.5 border-b border-orange-100 flex items-center gap-2">
+   674→            <Clock className="w-4 h-4 text-orange-700" />
+   675→            <span className="text-xs font-bold text-orange-800 uppercase tracking-wide">Riwayat Kekurangan</span>
+   676→          </div>
+   677→          <CardContent className="px-4 py-3">
+   678→            <div className="space-y-3 max-h-64 overflow-y-auto">
+   679→              {pastWithShortages.map((selapanan) => {
+   680→                const shortage = getMyShortage(selapanan.id);
+   681→                if (!shortage) return null;
+   682→
+   683→                return (
+   684→                  <div
+   685→                    key={selapanan.id}
+   686→                    className="bg-stone-50 rounded-xl p-3 border border-stone-100"
+   687→                  >
+   688→                    <div className="flex items-center justify-between mb-2">
+   689→                      <div className="flex items-center gap-2">
+   690→                        <Badge className={`text-[10px] font-semibold ${STATUS_COLORS[selapanan.status] || 'bg-stone-100 text-stone-700'}`}>
+   691→                          {SELAPANAN_STATUS_LABELS[selapanan.status] || selapanan.status}
+   692→                        </Badge>
+   693→                      </div>
+   694→                      <span className="text-xs text-stone-400 font-medium">
+   695→                        {formatDateShort(selapanan.periodeStart)} — {formatDateShort(selapanan.periodeEnd)}
+   696→                      </span>
+   697→                    </div>
+   698→
+   699→                    <div className="flex items-center justify-between">
+   700→                      <div>
+   701→                        <p className="text-sm text-stone-700 font-medium">
+   702→                          Total: {formatCurrency(shortage.totalShortage)}
+   703→                        </p>
+   704→                        <p className="text-xs text-stone-500">
+   705→                          Dibayar: {formatCurrency(shortage.settledAmount)}
+   706→                        </p>
+   707→                      </div>
+   708→                      <Badge
+   709→                        className={
+   710→                          shortage.isSettled
+   711→                            ? 'bg-emerald-100 text-emerald-700 font-semibold'
+   712→                            : 'bg-rose-100 text-rose-700 font-semibold'
+   713→                        }
+   714→                      >
+   715→                        {shortage.isSettled ? 'Lunas' : 'Belum Lunas'}
+   716→                      </Badge>
+   717→                    </div>
+   718→
+   719→                    {shortage.carriedOver && !shortage.isSettled && (
+   720→                      <p className="text-xs text-amber-600 mt-1.5 flex items-center gap-1 font-semibold">
+   721→                        <AlertCircle className="w-3 h-3" />
+   722→                        Dibawa ke selapanan berikutnya
+   723→                      </p>
+   724→                    )}
+   725→                  </div>
+   726→                );
+   727→              })}
+   728→            </div>
+   729→          </CardContent>
+   730→        </Card>
+   731→      )}
+   732→
+   733→      {/* Daftar Selapanan */}
+   734→      <Card className="rounded-2xl shadow-sm border border-teal-100 bg-white/90 overflow-hidden">
+   735→        <div className="bg-teal-50 px-4 py-2.5 border-b border-teal-100 flex items-center gap-2">
+   736→          <Calendar className="w-4 h-4 text-teal-700" />
+   737→          <span className="text-xs font-bold text-teal-800 uppercase tracking-wide">Daftar Selapanan</span>
+   738→        </div>
+   739→        <CardContent className="px-4 py-3">
+   740→          {selapananList.length === 0 ? (
+   741→            <div className="text-center py-6">
+   742→              <Calendar className="w-8 h-8 text-orange-200 mx-auto mb-2" />
+   743→              <p className="text-sm text-stone-500">Belum ada data selapanan</p>
+   744→            </div>
+   745→          ) : (
+   746→            <div className="space-y-2 max-h-64 overflow-y-auto">
+   747→              {selapananList.map((selapanan) => {
+   748→                const myShortage = getMyShortage(selapanan.id);
+   749→                const isUpcoming = selapanan.status === 'UPCOMING';
+   750→
+   751→                return (
+   752→                  <div
+   753→                    key={selapanan.id}
+   754→                    className={`flex items-center justify-between py-2.5 px-3 rounded-xl border ${
+   755→                      isUpcoming ? 'bg-amber-50 border-amber-200' : 'bg-stone-50 border-stone-100'
+   756→                    }`}
+   757→                  >
+   758→                    <div className="flex-1 min-w-0">
+   759→                      <div className="flex items-center gap-2 mb-0.5">
+   760→                        <Badge
+   761→                          className={`text-[10px] font-semibold ${STATUS_COLORS[selapanan.status] || 'bg-stone-100 text-stone-700'}`}
+   762→                        >
+   763→                          {SELAPANAN_STATUS_LABELS[selapanan.status] || selapanan.status}
+   764→                        </Badge>
+   765→                      </div>
+   766→                      <p className="text-sm text-stone-800 font-semibold truncate">
+   767→                        {formatDate(selapanan.meetingDate)}
+   768→                      </p>
+   769→                      <p className="text-xs text-stone-500">
+   770→                        {formatDateShort(selapanan.periodeStart)} — {formatDateShort(selapanan.periodeEnd)}
+   771→                      </p>
+   772→                    </div>
+   773→
+   774→                    <div className="text-right shrink-0 ml-3">
+   775→                      {myShortage && !myShortage.isSettled ? (
+   776→                        <div>
+   777→                          <p className="text-[10px] text-stone-500 font-semibold uppercase">Kurang</p>
+   778→                          <p className="text-sm font-bold text-rose-600">
+   779→                            {formatCurrency(myShortage.totalShortage - myShortage.settledAmount)}
+   780→                          </p>
+   781→                        </div>
+   782→                      ) : myShortage && myShortage.isSettled ? (
+   783→                        <div>
+   784→                          <p className="text-[10px] text-stone-500 font-semibold uppercase">Status</p>
+   785→                          <p className="text-sm font-bold text-emerald-600">Lunas</p>
+   786→                        </div>
+   787→                      ) : (
+   788→                        <div>
+   789→                          <p className="text-[10px] text-stone-500 font-semibold uppercase">Status</p>
+   790→                          <p className="text-sm text-stone-400">-</p>
+   791→                        </div>
+   792→                      )}
+   793→                    </div>
+   794→                  </div>
+   795→                );
+   796→              })}
+   797→            </div>
+   798→          )}
+   799→        </CardContent>
+   800→      </Card>
+   801→    </div>
+   802→  );
+   803→}
+   804→
