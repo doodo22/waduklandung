@@ -163,6 +163,34 @@ export async function POST(request: NextRequest) {
       otherIncomeAmount;
 
     // =============================================
+    // CALCULATE EXPENSES FOR THIS SELAPANAN
+    // =============================================
+    const expenseTransactions = await db.transaction.findMany({
+      where: {
+        selapananId,
+        type: 'EXPENSE',
+      },
+    });
+
+    let expensePembelian = 0;
+    let expensePembangunan = 0;
+    let expenseOperasional = 0;
+    let expenseBantuan = 0;
+    let expenseLainLain = 0;
+
+    for (const tx of expenseTransactions) {
+      switch (tx.category) {
+        case 'PEMBELIAN': expensePembelian += tx.amount; break;
+        case 'PEMBANGUNAN': expensePembangunan += tx.amount; break;
+        case 'OPERASIONAL': expenseOperasional += tx.amount; break;
+        case 'BANTUAN': expenseBantuan += tx.amount; break;
+        case 'LAIN_LAIN': expenseLainLain += tx.amount; break;
+      }
+    }
+
+    const totalExpense = expensePembelian + expensePembangunan + expenseOperasional + expenseBantuan + expenseLainLain;
+
+    // =============================================
     // UPDATE SELAPANAN WITH RECAP
     // =============================================
     const updatedSelapanan = await db.selapanan.update({
@@ -177,6 +205,12 @@ export async function POST(request: NextRequest) {
         levyPaid,
         otherIncome: otherIncomeAmount,
         totalIncome,
+        expensePembelian,
+        expensePembangunan,
+        expenseOperasional,
+        expenseBantuan,
+        expenseLainLain,
+        totalExpense,
       },
     });
 
@@ -429,6 +463,13 @@ export async function POST(request: NextRequest) {
         levyPaid,
         otherIncome: otherIncomeAmount,
         totalIncome,
+        expensePembelian,
+        expensePembangunan,
+        expenseOperasional,
+        expenseBantuan,
+        expenseLainLain,
+        totalExpense,
+        netIncome: totalIncome - totalExpense,
       },
       transactionsCreated: transactions.length,
       shortagesCarriedOver: carriedOverCount,

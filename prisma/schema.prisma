@@ -210,7 +210,7 @@ model Selapanan {
   meetingLocation String?
   status          String   @default("UPCOMING") // UPCOMING, COMPLETED, CANCELLED
 
-  // Financial recap
+  // Financial recap — INCOME
   jimpitanDaily   Int      @default(0)  // Total jimpitan harian terkumpul
   jimpitanMonthly Int      @default(0)  // Total iuran bulanan terkumpul
   rondaFeeTotal   Int      @default(0)  // Total iuran ronda terkumpul
@@ -219,6 +219,14 @@ model Selapanan {
   levyPaid        Int      @default(0)  // Total tarikan lain yang dibayar
   otherIncome     Int      @default(0)  // Pemasukan lain
   totalIncome     Int      @default(0)  // Total semua pemasukan
+
+  // Financial recap — EXPENSE
+  expensePembelian   Int      @default(0)  // Total pengeluaran pembelian barang
+  expensePembangunan Int      @default(0)  // Total pengeluaran pembangunan/perbaikan
+  expenseOperasional Int      @default(0)  // Total pengeluaran operasional
+  expenseBantuan     Int      @default(0)  // Total bantuan warga
+  expenseLainLain    Int      @default(0)  // Pengeluaran lain-lain
+  totalExpense       Int      @default(0)  // Total semua pengeluaran
 
   notes           String?
   createdAt       DateTime @default(now())
