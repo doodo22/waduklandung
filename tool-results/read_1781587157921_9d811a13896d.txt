@@ -1,0 +1,1379 @@
+     1→     1→'use client';
+     2→     2→
+     3→     3→import { useState, useEffect, useCallback } from 'react';
+     4→     4→import { api } from '@/lib/api-client';
+     5→     5→import {
+     6→     6→  formatCurrency,
+     7→     7→  formatDateShort,
+     8→     8→  CATEGORY_LABELS,
+     9→     9→  TRANSACTION_TYPE,
+    10→    10→  INCOME_CATEGORIES,
+    11→    11→  EXPENSE_CATEGORIES,
+    12→    12→  TRANSFER_CATEGORIES,
+    13→    13→  ACCOUNT_TYPE,
+    14→    14→  ACCOUNT_LABELS,
+    15→    15→  FINE_TYPE,
+    16→    16→  FINE_STATUS,
+    17→    17→} from '@/lib/constants';
+    18→    18→import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+    19→    19→import { Button } from '@/components/ui/button';
+    20→    20→import { Badge } from '@/components/ui/badge';
+    21→    21→import {
+    22→    22→  Dialog,
+    23→    23→  DialogContent,
+    24→    24→  DialogHeader,
+    25→    25→  DialogTitle,
+    26→    26→  DialogTrigger,
+    27→    27→} from '@/components/ui/dialog';
+    28→    28→import { Input } from '@/components/ui/input';
+    29→    29→import { Label } from '@/components/ui/label';
+    30→    30→import {
+    31→    31→  Select,
+    32→    32→  SelectContent,
+    33→    33→  SelectItem,
+    34→    34→  SelectTrigger,
+    35→    35→  SelectValue,
+    36→    36→} from '@/components/ui/select';
+    37→    37→import {
+    38→    38→  Table,
+    39→    39→  TableBody,
+    40→    40→  TableCell,
+    41→    41→  TableHead,
+    42→    42→  TableHeader,
+    43→    43→  TableRow,
+    44→    44→} from '@/components/ui/table';
+    45→    45→import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+    46→    46→import { Separator } from '@/components/ui/separator';
+    47→    47→import {
+    48→    48→  Wallet,
+    49→    49→  TrendingUp,
+    50→    50→  TrendingDown,
+    51→    51→  Plus,
+    52→    52→  Trash2,
+    53→    53→  CheckCircle2,
+    54→    54→  AlertTriangle,
+    55→    55→  Search,
+    56→    56→  X,
+    57→    57→  ArrowRightLeft,
+    58→    58→  Landmark,
+    59→    59→  ArrowUpRight,
+    60→    60→  ArrowDownRight,
+    61→    61→  RefreshCw,
+    62→    62→} from 'lucide-react';
+    63→    63→import { toast } from 'sonner';
+    64→    64→
+    65→    65→// Types
+    66→    66→interface Transaction {
+    67→    67→  id: string;
+    68→    68→  type: string;
+    69→    69→  category: string;
+    70→    70→  amount: number;
+    71→    71→  description: string;
+    72→    72→  date: string;
+    73→    73→  account: string;
+    74→    74→  selapananId: string | null;
+    75→    75→  createdBy: string;
+    76→    76→  createdAt: string;
+    77→    77→}
+    78→    78→
+    79→    79→interface TransactionSummary {
+    80→    80→  totalIncome: number;
+    81→    81→  totalExpense: number;
+    82→    82→  balance: number;
+    83→    83→  cashIncome: number;
+    84→    84→  cashExpense: number;
+    85→    85→  cashBalance: number;
+    86→    86→  bankIncome: number;
+    87→    87→  bankExpense: number;
+    88→    88→  bankBalance: number;
+    89→    89→  filteredIncome: number;
+    90→    90→  filteredExpense: number;
+    91→    91→  filteredNet: number;
+    92→    92→}
+    93→    93→
+    94→    94→interface Fine {
+    95→    95→  id: string;
+    96→    96→  userId: string;
+    97→    97→  familyId: string;
+    98→    98→  type: string;
+    99→    99→  amount: number;
+   100→   100→  reason: string;
+   101→   101→  status: string;
+   102→   102→  date: string;
+   103→   103→  selapananId: string | null;
+   104→   104→  user: { id: string; name: string };
+   105→   105→  family: { id: string; familyHead: string };
+   106→   106→}
+   107→   107→
+   108→   108→interface FineSummary {
+   109→   109→  totalUnpaid: number;
+   110→   110→  totalPaid: number;
+   111→   111→}
+   112→   112→
+   113→   113→interface Family {
+   114→   114→  id: string;
+   115→   115→  familyHead: string;
+   116→   116→  address: string;
+   117→   117→  members: { id: string; name: string }[];
+   118→   118→}
+   119→   119→
+   120→   120→interface Props {
+   121→   121→  userId: string;
+   122→   122→  familyId: string | null;
+   123→   123→  isAdmin: boolean;
+   124→   124→}
+   125→   125→
+   126→   126→export function KeuanganPage({ userId, familyId, isAdmin }: Props) {
+   127→   127→  // Transactions state
+   128→   128→  const [transactions, setTransactions] = useState<Transaction[]>([]);
+   129→   129→  const [summary, setSummary] = useState<TransactionSummary>({
+   130→   130→    totalIncome: 0,
+   131→   131→    totalExpense: 0,
+   132→   132→    balance: 0,
+   133→   133→    cashIncome: 0,
+   134→   134→    cashExpense: 0,
+   135→   135→    cashBalance: 0,
+   136→   136→    bankIncome: 0,
+   137→   137→    bankExpense: 0,
+   138→   138→    bankBalance: 0,
+   139→   139→    filteredIncome: 0,
+   140→   140→    filteredExpense: 0,
+   141→   141→    filteredNet: 0,
+   142→   142→  });
+   143→   143→  const [loading, setLoading] = useState(true);
+   144→   144→
+   145→   145→  // Filters
+   146→   146→  const [filterType, setFilterType] = useState<string>('all');
+   147→   147→  const [filterCategory, setFilterCategory] = useState<string>('all');
+   148→   148→  const [filterAccount, setFilterAccount] = useState<string>('all');
+   149→   149→  const [filterFrom, setFilterFrom] = useState('');
+   150→   150→  const [filterTo, setFilterTo] = useState('');
+   151→   151→
+   152→   152→  // Transaction form
+   153→   153→  const [txOpen, setTxOpen] = useState(false);
+   154→   154→  const [txForm, setTxForm] = useState({
+   155→   155→    type: 'INCOME',
+   156→   156→    category: 'IURAN_BULANAN',
+   157→   157→    account: 'CASH',
+   158→   158→    amount: '',
+   159→   159→    description: '',
+   160→   160→    date: new Date().toISOString().split('T')[0],
+   161→   161→  });
+   162→   162→  const [txSaving, setTxSaving] = useState(false);
+   163→   163→
+   164→   164→  // Transfer form
+   165→   165→  const [transferForm, setTransferForm] = useState({
+   166→   166→    direction: 'SETOR_BANK' as 'SETOR_BANK' | 'TARIK_BANK',
+   167→   167→    amount: '',
+   168→   168→    description: '',
+   169→   169→    date: new Date().toISOString().split('T')[0],
+   170→   170→  });
+   171→   171→  const [transferSaving, setTransferSaving] = useState(false);
+   172→   172→
+   173→   173→  // Fines state
+   174→   174→  const [fines, setFines] = useState<Fine[]>([]);
+   175→   175→  const [fineSummary, setFineSummary] = useState<FineSummary>({ totalUnpaid: 0, totalPaid: 0 });
+   176→   176→  const [finesLoading, setFinesLoading] = useState(true);
+   177→   177→
+   178→   178→  // Fine form
+   179→   179→  const [fineOpen, setFineOpen] = useState(false);
+   180→   180→  const [fineForm, setFineForm] = useState({
+   181→   181→    userId: '',
+   182→   182→    familyId: '',
+   183→   183→    type: 'RONDA',
+   184→   184→    amount: '',
+   185→   185→    reason: '',
+   186→   186→    date: new Date().toISOString().split('T')[0],
+   187→   187→  });
+   188→   188→  const [fineSaving, setFineSaving] = useState(false);
+   189→   189→
+   190→   190→  // Families for fine form dropdown
+   191→   191→  const [families, setFamilies] = useState<Family[]>([]);
+   192→   192→
+   193→   193→  // Active tab
+   194→   194→  const [activeTab, setActiveTab] = useState('transactions');
+   195→   195→
+   196→   196→  // Dynamic category options based on transaction type
+   197→   197→  const getCategoryOptions = useCallback((type: string) => {
+   198→   198→    if (type === 'INCOME') return INCOME_CATEGORIES;
+   199→   199→    if (type === 'EXPENSE') return EXPENSE_CATEGORIES;
+   200→   200→    return [];
+   201→   201→  }, []);
+   202→   202→
+   203→   203→  // Get filter category options (all income + expense combined)
+   204→   204→  const getFilterCategoryOptions = useCallback(() => {
+   205→   205→    if (filterType === 'INCOME') return INCOME_CATEGORIES;
+   206→   206→    if (filterType === 'EXPENSE') return EXPENSE_CATEGORIES;
+   207→   207→    if (filterType === 'TRANSFER') return TRANSFER_CATEGORIES;
+   208→   208→    return [...INCOME_CATEGORIES, ...EXPENSE_CATEGORIES, ...TRANSFER_CATEGORIES];
+   209→   209→  }, [filterType]);
+   210→   210→
+   211→   211→  const fetchTransactions = useCallback(async () => {
+   212→   212→    try {
+   213→   213→      const params = new URLSearchParams();
+   214→   214→      if (filterType && filterType !== 'all') params.set('type', filterType);
+   215→   215→      if (filterCategory && filterCategory !== 'all') params.set('category', filterCategory);
+   216→   216→      if (filterAccount && filterAccount !== 'all') params.set('account', filterAccount);
+   217→   217→      if (filterFrom) params.set('from', filterFrom);
+   218→   218→      if (filterTo) params.set('to', filterTo);
+   219→   219→
+   220→   220→      const query = params.toString();
+   221→   221→      const res = await api.get(`/transactions${query ? `?${query}` : ''}`);
+   222→   222→      const data = await res.json();
+   223→   223→      if (res.ok) {
+   224→   224→        setTransactions(data.transactions || []);
+   225→   225→        setSummary(
+   226→   226→          data.summary || {
+   227→   227→            totalIncome: 0,
+   228→   228→            totalExpense: 0,
+   229→   229→            balance: 0,
+   230→   230→            cashBalance: 0,
+   231→   231→            bankBalance: 0,
+   232→   232→            filteredIncome: 0,
+   233→   233→            filteredExpense: 0,
+   234→   234→            filteredNet: 0,
+   235→   235→          }
+   236→   236→        );
+   237→   237→      }
+   238→   238→    } catch {
+   239→   239→      // silently handle
+   240→   240→    } finally {
+   241→   241→      setLoading(false);
+   242→   242→    }
+   243→   243→  }, [filterType, filterCategory, filterAccount, filterFrom, filterTo]);
+   244→   244→
+   245→   245→  const fetchFines = useCallback(async () => {
+   246→   246→    try {
+   247→   247→      const res = await api.get('/fines');
+   248→   248→      const data = await res.json();
+   249→   249→      if (res.ok) {
+   250→   250→        setFines(data.fines || []);
+   251→   251→        setFineSummary(data.summary || { totalUnpaid: 0, totalPaid: 0 });
+   252→   252→      }
+   253→   253→    } catch {
+   254→   254→      // silently handle
+   255→   255→    } finally {
+   256→   256→      setFinesLoading(false);
+   257→   257→    }
+   258→   258→  }, []);
+   259→   259→
+   260→   260→  const fetchFamilies = useCallback(async () => {
+   261→   261→    if (!isAdmin) return;
+   262→   262→    try {
+   263→   263→      const res = await api.get('/families');
+   264→   264→      const data = await res.json();
+   265→   265→      if (res.ok) {
+   266→   266→        setFamilies(data.families || []);
+   267→   267→      }
+   268→   268→    } catch {
+   269→   269→      // silently handle
+   270→   270→    }
+   271→   271→  }, [isAdmin]);
+   272→   272→
+   273→   273→  useEffect(() => {
+   274→   274→    fetchTransactions();
+   275→   275→  }, [fetchTransactions]);
+   276→   276→
+   277→   277→  useEffect(() => {
+   278→   278→    fetchFines();
+   279→   279→    fetchFamilies();
+   280→   280→  }, [fetchFines, fetchFamilies]);
+   281→   281→
+   282→   282→  const handleCreateTransaction = async () => {
+   283→   283→    if (!txForm.type || !txForm.category || !txForm.amount || !txForm.description || !txForm.date)
+   284→   284→      return;
+   285→   285→    setTxSaving(true);
+   286→   286→    try {
+   287→   287→      // Auto-set account for BUNGA_BANK
+   288→   288→      let account = txForm.account;
+   289→   289→      if (txForm.category === 'BUNGA_BANK') {
+   290→   290→        account = 'BANK_BKK';
+   291→   291→      }
+   292→   292→
+   293→   293→      const res = await api.post('/transactions', {
+   294→   294→        type: txForm.type,
+   295→   295→        category: txForm.category,
+   296→   296→        amount: parseInt(txForm.amount, 10),
+   297→   297→        description: txForm.description,
+   298→   298→        date: txForm.date,
+   299→   299→        account,
+   300→   300→      });
+   301→   301→      if (res.ok) {
+   302→   302→        toast.success('Transaksi berhasil ditambahkan');
+   303→   303→        setTxOpen(false);
+   304→   304→        setTxForm({
+   305→   305→          type: 'INCOME',
+   306→   306→          category: 'IURAN_BULANAN',
+   307→   307→          account: 'CASH',
+   308→   308→          amount: '',
+   309→   309→          description: '',
+   310→   310→          date: new Date().toISOString().split('T')[0],
+   311→   311→        });
+   312→   312→        fetchTransactions();
+   313→   313→      } else {
+   314→   314→        const data = await res.json();
+   315→   315→        toast.error(data.error || 'Gagal menambahkan transaksi');
+   316→   316→      }
+   317→   317→    } catch {
+   318→   318→      toast.error('Gagal menambahkan transaksi');
+   319→   319→    } finally {
+   320→   320→      setTxSaving(false);
+   321→   321→    }
+   322→   322→  };
+   323→   323→
+   324→   324→  const handleDeleteTransaction = async (id: string) => {
+   325→   325→    try {
+   326→   326→      const res = await api.delete(`/transactions?id=${id}`);
+   327→   327→      if (res.ok) {
+   328→   328→        toast.success('Transaksi berhasil dihapus');
+   329→   329→        fetchTransactions();
+   330→   330→      } else {
+   331→   331→        toast.error('Gagal menghapus transaksi');
+   332→   332→      }
+   333→   333→    } catch {
+   334→   334→      toast.error('Gagal menghapus transaksi');
+   335→   335→    }
+   336→   336→  };
+   337→   337→
+   338→   338→  const handleTransfer = async (direction: 'SETOR_BANK' | 'TARIK_BANK') => {
+   339→   339→    if (!transferForm.amount || !transferForm.description || !transferForm.date) return;
+   340→   340→    setTransferSaving(true);
+   341→   341→    try {
+   342→   342→      const res = await api.post('/transactions', {
+   343→   343→        type: 'TRANSFER',
+   344→   344→        category: direction,
+   345→   345→        amount: parseInt(transferForm.amount, 10),
+   346→   346→        description: transferForm.description,
+   347→   347→        date: transferForm.date,
+   348→   348→      });
+   349→   349→      if (res.ok) {
+   350→   350→        toast.success(
+   351→   351→          direction === 'SETOR_BANK'
+   352→   352→            ? 'Setoran ke bank berhasil'
+   353→   353→            : 'Penarikan dari bank berhasil'
+   354→   354→        );
+   355→   355→        setTransferForm({
+   356→   356→          direction: 'SETOR_BANK',
+   357→   357→          amount: '',
+   358→   358→          description: '',
+   359→   359→          date: new Date().toISOString().split('T')[0],
+   360→   360→        });
+   361→   361→        fetchTransactions();
+   362→   362→      } else {
+   363→   363→        const data = await res.json();
+   364→   364→        toast.error(data.error || 'Gagal melakukan transfer');
+   365→   365→      }
+   366→   366→    } catch {
+   367→   367→      toast.error('Gagal melakukan transfer');
+   368→   368→    } finally {
+   369→   369→      setTransferSaving(false);
+   370→   370→    }
+   371→   371→  };
+   372→   372→
+   373→   373→  const handleCreateFine = async () => {
+   374→   374→    if (!fineForm.userId || !fineForm.familyId || !fineForm.type || !fineForm.amount || !fineForm.reason || !fineForm.date)
+   375→   375→      return;
+   376→   376→    setFineSaving(true);
+   377→   377→    try {
+   378→   378→      const res = await api.post('/fines', {
+   379→   379→        userId: fineForm.userId,
+   380→   380→        familyId: fineForm.familyId,
+   381→   381→        type: fineForm.type,
+   382→   382→        amount: parseInt(fineForm.amount, 10),
+   383→   383→        reason: fineForm.reason,
+   384→   384→        date: fineForm.date,
+   385→   385→      });
+   386→   386→      if (res.ok) {
+   387→   387→        toast.success('Denda berhasil ditambahkan');
+   388→   388→        setFineOpen(false);
+   389→   389→        setFineForm({
+   390→   390→          userId: '',
+   391→   391→          familyId: '',
+   392→   392→          type: 'RONDA',
+   393→   393→          amount: '',
+   394→   394→          reason: '',
+   395→   395→          date: new Date().toISOString().split('T')[0],
+   396→   396→        });
+   397→   397→        fetchFines();
+   398→   398→      }
+   399→   399→    } catch {
+   400→   400→      toast.error('Gagal menambahkan denda');
+   401→   401→    } finally {
+   402→   402→      setFineSaving(false);
+   403→   403→    }
+   404→   404→  };
+   405→   405→
+   406→   406→  const handleMarkFinePaid = async (id: string) => {
+   407→   407→    try {
+   408→   408→      const res = await api.put('/fines', { id, status: 'PAID' });
+   409→   409→      if (res.ok) {
+   410→   410→        toast.success('Denda ditandai lunas');
+   411→   411→        fetchFines();
+   412→   412→      }
+   413→   413→    } catch {
+   414→   414→      toast.error('Gagal mengubah status denda');
+   415→   415→    }
+   416→   416→  };
+   417→   417→
+   418→   418→  const handleFamilySelect = (familyId: string) => {
+   419→   419→    const family = families.find((f) => f.id === familyId);
+   420→   420→    setFineForm((prev) => ({
+   421→   421→      ...prev,
+   422→   422→      familyId,
+   423→   423→      userId: family?.members?.[0]?.id || '',
+   424→   424→    }));
+   425→   425→  };
+   426→   426→
+   427→   427→  const selectedFamily = families.find((f) => f.id === fineForm.familyId);
+   428→   428→
+   429→   429→  const clearFilters = () => {
+   430→   430→    setFilterType('all');
+   431→   431→    setFilterCategory('all');
+   432→   432→    setFilterAccount('all');
+   433→   433→    setFilterFrom('');
+   434→   434→    setFilterTo('');
+   435→   435→  };
+   436→   436→
+   437→   437→  const hasActiveFilters = filterType !== 'all' || filterCategory !== 'all' || filterAccount !== 'all' || filterFrom || filterTo;
+   438→   438→
+   439→   439→  // Get type badge styling
+   440→   440→  const getTypeBadge = (tx: Transaction) => {
+   441→   441→    if (tx.type === 'TRANSFER') {
+   442→   442→      return { className: 'bg-amber-100 text-amber-800', label: 'Transfer' };
+   443→   443→    }
+   444→   444→    if (tx.type === 'INCOME') {
+   445→   445→      return { className: 'bg-green-100 text-green-800', label: 'Masuk' };
+   446→   446→    }
+   447→   447→    return { className: 'bg-red-100 text-red-800', label: 'Keluar' };
+   448→   448→  };
+   449→   449→
+   450→   450→  // Get amount display for transaction
+   451→   451→  const getAmountDisplay = (tx: Transaction) => {
+   452→   452→    if (tx.type === 'TRANSFER') {
+   453→   453→      // For transfer, show the direction based on the account
+   454→   454→      // SETOR_BANK from CASH account = money going out (shown as -)
+   455→   455→      // SETOR_BANK from BANK_BKK account = money coming in (shown as +)
+   456→   456→      // TARIK_BANK from BANK_BKK account = money going out (shown as -)
+   457→   457→      // TARIK_BANK from CASH account = money coming in (shown as +)
+   458→   458→      if (tx.description.startsWith('[Transfer]')) {
+   459→   459→        // Counterpart entry - it's the receiving end
+   460→   460→        return { text: `+ ${formatCurrency(tx.amount)}`, className: 'text-green-700' };
+   461→   461→      }
+   462→   462→      // Source entry - it's the sending end
+   463→   463→      return { text: `- ${formatCurrency(tx.amount)}`, className: 'text-red-700' };
+   464→   464→    }
+   465→   465→    if (tx.type === 'INCOME') {
+   466→   466→      return { text: `+ ${formatCurrency(tx.amount)}`, className: 'text-green-700' };
+   467→   467→    }
+   468→   468→    return { text: `- ${formatCurrency(tx.amount)}`, className: 'text-red-700' };
+   469→   469→  };
+   470→   470→
+   471→   471→  // Filter transfer transactions for the transfer tab
+   472→   472→  const transferTransactions = transactions.filter((tx) => tx.type === 'TRANSFER');
+   473→   473→
+   474→   474→  if (loading) {
+   475→   475→    return (
+   476→   476→      <div className="space-y-6">
+   477→   477→        <h2 className="text-xl font-bold text-slate-800">Keuangan RT</h2>
+   478→   478→        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+   479→   479→          {[1, 2, 3, 4].map((i) => (
+   480→   480→            <Card key={i} className="rounded-xl shadow-sm border border-slate-200 animate-pulse">
+   481→   481→              <CardContent className="p-5">
+   482→   482→                <div className="h-4 bg-slate-200 rounded w-1/2 mb-3" />
+   483→   483→                <div className="h-6 bg-slate-200 rounded w-3/4" />
+   484→   484→              </CardContent>
+   485→   485→            </Card>
+   486→   486→          ))}
+   487→   487→        </div>
+   488→   488→      </div>
+   489→   489→    );
+   490→   490→  }
+   491→   491→
+   492→   492→  return (
+   493→   493→    <div className="space-y-6">
+   494→   494→      {/* Header */}
+   495→   495→      <div className="flex items-center justify-between">
+   496→   496→        <div>
+   497→   497→          <h2 className="text-xl font-bold text-slate-800">Keuangan RT</h2>
+   498→   498→          <p className="text-sm text-slate-500 mt-1">Kelola keuangan dan denda RT</p>
+   499→   499→        </div>
+   500→   500→        {isAdmin && (
+   501→   501→          <Dialog open={txOpen} onOpenChange={setTxOpen}>
+   502→   502→            <DialogTrigger asChild>
+   503→   503→              <Button className="h-10 bg-slate-800 hover:bg-slate-700 text-white">
+   504→   504→                <Plus className="w-4 h-4 mr-1" />
+   505→   505→                Tambah Transaksi
+   506→   506→              </Button>
+   507→   507→            </DialogTrigger>
+   508→   508→            <DialogContent className="max-w-md">
+   509→   509→              <DialogHeader>
+   510→   510→                <DialogTitle>Tambah Transaksi</DialogTitle>
+   511→   511→              </DialogHeader>
+   512→   512→              <div className="space-y-4 mt-2">
+   513→   513→                <div className="space-y-2">
+   514→   514→                  <Label>Jenis</Label>
+   515→   515→                  <Select
+   516→   516→                    value={txForm.type}
+   517→   517→                    onValueChange={(v) => {
+   518→   518→                      const cats = getCategoryOptions(v);
+   519→   519→                      setTxForm({
+   520→   520→                        ...txForm,
+   521→   521→                        type: v,
+   522→   522→                        category: cats[0] || 'IURAN_BULANAN',
+   523→   523→                        // Reset account to CASH if switching away from BUNGA_BANK
+   524→   524→                        account: v === 'EXPENSE' ? txForm.account : txForm.account,
+   525→   525→                      });
+   526→   526→                    }}
+   527→   527→                  >
+   528→   528→                    <SelectTrigger className="h-10 w-full">
+   529→   529→                      <SelectValue />
+   530→   530→                    </SelectTrigger>
+   531→   531→                    <SelectContent>
+   532→   532→                      <SelectItem value="INCOME">Pemasukan</SelectItem>
+   533→   533→                      <SelectItem value="EXPENSE">Pengeluaran</SelectItem>
+   534→   534→                    </SelectContent>
+   535→   535→                  </Select>
+   536→   536→                </div>
+   537→   537→
+   538→   538→                <div className="space-y-2">
+   539→   539→                  <Label>Kategori</Label>
+   540→   540→                  <Select
+   541→   541→                    value={txForm.category}
+   542→   542→                    onValueChange={(v) => {
+   543→   543→                      setTxForm({
+   544→   544→                        ...txForm,
+   545→   545→                        category: v,
+   546→   546→                        // Auto-set account for BUNGA_BANK
+   547→   547→                        account: v === 'BUNGA_BANK' ? 'BANK_BKK' : txForm.account === 'BANK_BKK' && v !== 'BUNGA_BANK' ? 'CASH' : txForm.account,
+   548→   548→                      });
+   549→   549→                    }}
+   550→   550→                  >
+   551→   551→                    <SelectTrigger className="h-10 w-full">
+   552→   552→                      <SelectValue />
+   553→   553→                    </SelectTrigger>
+   554→   554→                    <SelectContent>
+   555→   555→                      {getCategoryOptions(txForm.type).map((key) => (
+   556→   556→                        <SelectItem key={key} value={key}>
+   557→   557→                          {CATEGORY_LABELS[key]}
+   558→   558→                        </SelectItem>
+   559→   559→                      ))}
+   560→   560→                    </SelectContent>
+   561→   561→                  </Select>
+   562→   562→                </div>
+   563→   563→
+   564→   564→                <div className="space-y-2">
+   565→   565→                  <Label>Akun</Label>
+   566→   566→                  <Select
+   567→   567→                    value={txForm.category === 'BUNGA_BANK' ? 'BANK_BKK' : txForm.account}
+   568→   568→                    onValueChange={(v) => setTxForm({ ...txForm, account: v })}
+   569→   569→                    disabled={txForm.category === 'BUNGA_BANK'}
+   570→   570→                  >
+   571→   571→                    <SelectTrigger className="h-10 w-full">
+   572→   572→                      <SelectValue />
+   573→   573→                    </SelectTrigger>
+   574→   574→                    <SelectContent>
+   575→   575→                      <SelectItem value="CASH">{ACCOUNT_LABELS.CASH}</SelectItem>
+   576→   576→                      <SelectItem value="BANK_BKK">{ACCOUNT_LABELS.BANK_BKK}</SelectItem>
+   577→   577→                    </SelectContent>
+   578→   578→                  </Select>
+   579→   579→                  {txForm.category === 'BUNGA_BANK' && (
+   580→   580→                    <p className="text-xs text-slate-500">Otomatis: Tabungan BKK</p>
+   581→   581→                  )}
+   582→   582→                </div>
+   583→   583→
+   584→   584→                <div className="space-y-2">
+   585→   585→                  <Label>Jumlah (Rp)</Label>
+   586→   586→                  <Input
+   587→   587→                    type="number"
+   588→   588→                    placeholder="0"
+   589→   589→                    value={txForm.amount}
+   590→   590→                    onChange={(e) => setTxForm({ ...txForm, amount: e.target.value })}
+   591→   591→                    className="h-10"
+   592→   592→                  />
+   593→   593→                </div>
+   594→   594→
+   595→   595→                <div className="space-y-2">
+   596→   596→                  <Label>Keterangan</Label>
+   597→   597→                  <Input
+   598→   598→                    placeholder="Deskripsi transaksi"
+   599→   599→                    value={txForm.description}
+   600→   600→                    onChange={(e) => setTxForm({ ...txForm, description: e.target.value })}
+   601→   601→                    className="h-10"
+   602→   602→                  />
+   603→   603→                </div>
+   604→   604→
+   605→   605→                <div className="space-y-2">
+   606→   606→                  <Label>Tanggal</Label>
+   607→   607→                  <Input
+   608→   608→                    type="date"
+   609→   609→                    value={txForm.date}
+   610→   610→                    onChange={(e) => setTxForm({ ...txForm, date: e.target.value })}
+   611→   611→                    className="h-10"
+   612→   612→                  />
+   613→   613→                </div>
+   614→   614→
+   615→   615→                <div className="flex justify-end gap-3 pt-2">
+   616→   616→                  <Button variant="outline" onClick={() => setTxOpen(false)} className="h-10">
+   617→   617→                    Batal
+   618→   618→                  </Button>
+   619→   619→                  <Button
+   620→   620→                    onClick={handleCreateTransaction}
+   621→   621→                    disabled={txSaving || !txForm.amount || !txForm.description}
+   622→   622→                    className="h-10 bg-slate-800 hover:bg-slate-700 text-white"
+   623→   623→                  >
+   624→   624→                    {txSaving ? 'Menyimpan...' : 'Simpan'}
+   625→   625→                  </Button>
+   626→   626→                </div>
+   627→   627→              </div>
+   628→   628→            </DialogContent>
+   629→   629→          </Dialog>
+   630→   630→        )}
+   631→   631→      </div>
+   632→   632→
+   633→   633→      {/* Stat Cards */}
+   634→   634→      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+   635→   635→        {/* Saldo Total - Dark Card */}
+   636→   636→        <Card className="rounded-xl shadow-sm border border-slate-300 bg-slate-800">
+   637→   637→          <CardContent className="p-4 sm:p-5">
+   638→   638→            <div className="flex items-center gap-3">
+   639→   639→              <div className="w-10 h-10 rounded-lg bg-slate-700 flex items-center justify-center shrink-0">
+   640→   640→                <Wallet className="w-5 h-5 text-slate-200" />
+   641→   641→              </div>
+   642→   642→              <div className="min-w-0">
+   643→   643→                <p className="text-xs text-slate-300 font-medium">Saldo Total</p>
+   644→   644→                <p className="text-base sm:text-lg font-bold text-white truncate">
+   645→   645→                  {formatCurrency(summary.cashBalance + summary.bankBalance)}
+   646→   646→                </p>
+   647→   647→              </div>
+   648→   648→            </div>
+   649→   649→          </CardContent>
+   650→   650→        </Card>
+   651→   651→
+   652→   652→        {/* Kas Tunai */}
+   653→   653→        <Card className="rounded-xl shadow-sm border border-emerald-200 bg-emerald-50/50">
+   654→   654→          <CardContent className="p-4 sm:p-5">
+   655→   655→            <div className="flex items-center gap-3">
+   656→   656→              <div className="w-10 h-10 rounded-lg bg-emerald-100 flex items-center justify-center shrink-0">
+   657→   657→                <Wallet className="w-5 h-5 text-emerald-600" />
+   658→   658→              </div>
+   659→   659→              <div className="min-w-0">
+   660→   660→                <p className="text-xs text-emerald-600 font-medium">Kas Tunai</p>
+   661→   661→                <p className="text-base sm:text-lg font-bold text-emerald-700 truncate">
+   662→   662→                  {formatCurrency(summary.cashBalance)}
+   663→   663→                </p>
+   664→   664→              </div>
+   665→   665→            </div>
+   666→   666→          </CardContent>
+   667→   667→        </Card>
+   668→   668→
+   669→   669→        {/* Tabungan BKK */}
+   670→   670→        <Card className="rounded-xl shadow-sm border border-sky-200 bg-sky-50/50">
+   671→   671→          <CardContent className="p-4 sm:p-5">
+   672→   672→            <div className="flex items-center gap-3">
+   673→   673→              <div className="w-10 h-10 rounded-lg bg-sky-100 flex items-center justify-center shrink-0">
+   674→   674→                <Landmark className="w-5 h-5 text-sky-600" />
+   675→   675→              </div>
+   676→   676→              <div className="min-w-0">
+   677→   677→                <p className="text-xs text-sky-600 font-medium">Tabungan BKK</p>
+   678→   678→                <p className="text-base sm:text-lg font-bold text-sky-700 truncate">
+   679→   679→                  {formatCurrency(summary.bankBalance)}
+   680→   680→                </p>
+   681→   681→              </div>
+   682→   682→            </div>
+   683→   683→          </CardContent>
+   684→   684→        </Card>
+   685→   685→
+   686→   686→        {/* Net Periode */}
+   687→   687→        <Card className="rounded-xl shadow-sm border border-slate-200">
+   688→   688→          <CardContent className="p-4 sm:p-5">
+   689→   689→            <div className="flex items-center gap-3">
+   690→   690→              <div className={`w-10 h-10 rounded-lg flex items-center justify-center shrink-0 ${
+   691→   691→                summary.filteredNet >= 0 ? 'bg-green-100' : 'bg-red-100'
+   692→   692→              }`}>
+   693→   693→                {summary.filteredNet >= 0 ? (
+   694→   694→                  <TrendingUp className="w-5 h-5 text-green-600" />
+   695→   695→                ) : (
+   696→   696→                  <TrendingDown className="w-5 h-5 text-red-600" />
+   697→   697→                )}
+   698→   698→              </div>
+   699→   699→              <div className="min-w-0">
+   700→   700→                <p className="text-xs text-slate-500 font-medium">Net Periode</p>
+   701→   701→                <p className={`text-base sm:text-lg font-bold truncate ${
+   702→   702→                  summary.filteredNet >= 0 ? 'text-green-700' : 'text-red-700'
+   703→   703→                }`}>
+   704→   704→                  {formatCurrency(summary.filteredNet)}
+   705→   705→                </p>
+   706→   706→              </div>
+   707→   707→            </div>
+   708→   708→          </CardContent>
+   709→   709→        </Card>
+   710→   710→      </div>
+   711→   711→
+   712→   712→      {/* Tabs */}
+   713→   713→      <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
+   714→   714→        <TabsList>
+   715→   715→          <TabsTrigger value="transactions">Transaksi</TabsTrigger>
+   716→   716→          {isAdmin && <TabsTrigger value="transfer">Transfer</TabsTrigger>}
+   717→   717→          <TabsTrigger value="fines">Denda</TabsTrigger>
+   718→   718→        </TabsList>
+   719→   719→
+   720→   720→        {/* ============ Tab 1: Transaksi ============ */}
+   721→   721→        <TabsContent value="transactions" className="space-y-4">
+   722→   722→          {/* Filters */}
+   723→   723→          <Card className="rounded-xl shadow-sm border border-slate-200">
+   724→   724→            <CardContent className="p-4">
+   725→   725→              <div className="flex flex-wrap items-end gap-3">
+   726→   726→                <div className="space-y-1">
+   727→   727→                  <Label className="text-xs text-slate-500">Jenis</Label>
+   728→   728→                  <Select value={filterType} onValueChange={(v) => {
+   729→   729→                    setFilterType(v);
+   730→   730→                    setFilterCategory('all');
+   731→   731→                  }}>
+   732→   732→                    <SelectTrigger className="h-9 w-[140px]">
+   733→   733→                      <SelectValue />
+   734→   734→                    </SelectTrigger>
+   735→   735→                    <SelectContent>
+   736→   736→                      <SelectItem value="all">Semua</SelectItem>
+   737→   737→                      <SelectItem value="INCOME">Pemasukan</SelectItem>
+   738→   738→                      <SelectItem value="EXPENSE">Pengeluaran</SelectItem>
+   739→   739→                      <SelectItem value="TRANSFER">Transfer</SelectItem>
+   740→   740→                    </SelectContent>
+   741→   741→                  </Select>
+   742→   742→                </div>
+   743→   743→
+   744→   744→                <div className="space-y-1">
+   745→   745→                  <Label className="text-xs text-slate-500">Kategori</Label>
+   746→   746→                  <Select value={filterCategory} onValueChange={setFilterCategory}>
+   747→   747→                    <SelectTrigger className="h-9 w-[160px]">
+   748→   748→                      <SelectValue />
+   749→   749→                    </SelectTrigger>
+   750→   750→                    <SelectContent>
+   751→   751→                      <SelectItem value="all">Semua</SelectItem>
+   752→   752→                      {getFilterCategoryOptions().map((key) => (
+   753→   753→                        <SelectItem key={key} value={key}>
+   754→   754→                          {CATEGORY_LABELS[key]}
+   755→   755→                        </SelectItem>
+   756→   756→                      ))}
+   757→   757→                    </SelectContent>
+   758→   758→                  </Select>
+   759→   759→                </div>
+   760→   760→
+   761→   761→                <div className="space-y-1">
+   762→   762→                  <Label className="text-xs text-slate-500">Akun</Label>
+   763→   763→                  <Select value={filterAccount} onValueChange={setFilterAccount}>
+   764→   764→                    <SelectTrigger className="h-9 w-[150px]">
+   765→   765→                      <SelectValue />
+   766→   766→                    </SelectTrigger>
+   767→   767→                    <SelectContent>
+   768→   768→                      <SelectItem value="all">Semua</SelectItem>
+   769→   769→                      <SelectItem value="CASH">{ACCOUNT_LABELS.CASH}</SelectItem>
+   770→   770→                      <SelectItem value="BANK_BKK">{ACCOUNT_LABELS.BANK_BKK}</SelectItem>
+   771→   771→                    </SelectContent>
+   772→   772→                  </Select>
+   773→   773→                </div>
+   774→   774→
+   775→   775→                <div className="space-y-1">
+   776→   776→                  <Label className="text-xs text-slate-500">Dari</Label>
+   777→   777→                  <Input
+   778→   778→                    type="date"
+   779→   779→                    value={filterFrom}
+   780→   780→                    onChange={(e) => setFilterFrom(e.target.value)}
+   781→   781→                    className="h-9 w-[140px]"
+   782→   782→                  />
+   783→   783→                </div>
+   784→   784→
+   785→   785→                <div className="space-y-1">
+   786→   786→                  <Label className="text-xs text-slate-500">Sampai</Label>
+   787→   787→                  <Input
+   788→   788→                    type="date"
+   789→   789→                    value={filterTo}
+   790→   790→                    onChange={(e) => setFilterTo(e.target.value)}
+   791→   791→                    className="h-9 w-[140px]"
+   792→   792→                  />
+   793→   793→                </div>
+   794→   794→
+   795→   795→                {hasActiveFilters && (
+   796→   796→                  <Button variant="ghost" size="sm" onClick={clearFilters} className="h-9 text-slate-500">
+   797→   797→                    <X className="w-3.5 h-3.5 mr-1" />
+   798→   798→                    Reset
+   799→   799→                  </Button>
+   800→   800→                )}
+   801→   801→              </div>
+   802→   802→            </CardContent>
+   803→   803→          </Card>
+   804→   804→
+   805→   805→          {/* Transaction Table */}
+   806→   806→          <Card className="rounded-xl shadow-sm border border-slate-200">
+   807→   807→            <CardContent className="p-0">
+   808→   808→              {transactions.length === 0 ? (
+   809→   809→                <div className="p-10 text-center">
+   810→   810→                  <Search className="w-10 h-10 text-slate-300 mx-auto mb-3" />
+   811→   811→                  <p className="text-sm text-slate-500">Tidak ada transaksi ditemukan</p>
+   812→   812→                  {hasActiveFilters && (
+   813→   813→                    <p className="text-xs text-slate-400 mt-1">
+   814→   814→                      Coba ubah filter pencarian Anda
+   815→   815→                    </p>
+   816→   816→                  )}
+   817→   817→                </div>
+   818→   818→              ) : (
+   819→   819→                <div className="overflow-x-auto max-h-[500px] overflow-y-auto">
+   820→   820→                  <Table>
+   821→   821→                    <TableHeader>
+   822→   822→                      <TableRow>
+   823→   823→                        <TableHead className="text-xs h-9">Tanggal</TableHead>
+   824→   824→                        <TableHead className="text-xs h-9">Jenis</TableHead>
+   825→   825→                        <TableHead className="text-xs h-9">Kategori</TableHead>
+   826→   826→                        <TableHead className="text-xs h-9">Akun</TableHead>
+   827→   827→                        <TableHead className="text-xs h-9">Keterangan</TableHead>
+   828→   828→                        <TableHead className="text-xs h-9 text-right">Jumlah</TableHead>
+   829→   829→                        {isAdmin && (
+   830→   830→                          <TableHead className="text-xs h-9 w-12" />
+   831→   831→                        )}
+   832→   832→                      </TableRow>
+   833→   833→                    </TableHeader>
+   834→   834→                    <TableBody>
+   835→   835→                      {transactions.map((tx) => {
+   836→   836→                        const typeBadge = getTypeBadge(tx);
+   837→   837→                        const amountDisplay = getAmountDisplay(tx);
+   838→   838→                        const isTransferEntry = tx.type === 'TRANSFER';
+   839→   839→                        const isCounterpart = tx.description.startsWith('[Transfer]');
+   840→   840→
+   841→   841→                        return (
+   842→   842→                          <TableRow key={tx.id} className={isCounterpart ? 'bg-amber-50/50' : ''}>
+   843→   843→                            <TableCell className="text-xs py-3 whitespace-nowrap">
+   844→   844→                              {formatDateShort(tx.date)}
+   845→   845→                            </TableCell>
+   846→   846→                            <TableCell className="text-xs py-3">
+   847→   847→                              <Badge className={typeBadge.className}>
+   848→   848→                                {isTransferEntry && <ArrowRightLeft className="w-3 h-3 mr-1" />}
+   849→   849→                                {typeBadge.label}
+   850→   850→                              </Badge>
+   851→   851→                            </TableCell>
+   852→   852→                            <TableCell className="text-xs py-3">
+   853→   853→                              <Badge variant="outline" className="text-xs">
+   854→   854→                                {CATEGORY_LABELS[tx.category] || tx.category}
+   855→   855→                              </Badge>
+   856→   856→                            </TableCell>
+   857→   857→                            <TableCell className="text-xs py-3">
+   858→   858→                              <div className="flex items-center gap-1.5">
+   859→   859→                                {tx.account === 'BANK_BKK' ? (
+   860→   860→                                  <Landmark className="w-3 h-3 text-sky-500" />
+   861→   861→                                ) : (
+   862→   862→                                  <Wallet className="w-3 h-3 text-emerald-500" />
+   863→   863→                                )}
+   864→   864→                                <span className="text-slate-600">
+   865→   865→                                  {ACCOUNT_LABELS[tx.account] || tx.account}
+   866→   866→                                </span>
+   867→   867→                              </div>
+   868→   868→                            </TableCell>
+   869→   869→                            <TableCell className="text-xs py-3 max-w-[200px] truncate">
+   870→   870→                              {isCounterpart ? (
+   871→   871→                                <span className="flex items-center gap-1">
+   872→   872→                                  <RefreshCw className="w-3 h-3 text-amber-500 shrink-0" />
+   873→   873→                                  <span className="truncate">{tx.description.replace('[Transfer] ', '')}</span>
+   874→   874→                                </span>
+   875→   875→                              ) : (
+   876→   876→                                tx.description
+   877→   877→                              )}
+   878→   878→                            </TableCell>
+   879→   879→                            <TableCell
+   880→   880→                              className={`text-xs py-3 text-right font-medium whitespace-nowrap ${amountDisplay.className}`}
+   881→   881→                            >
+   882→   882→                              {amountDisplay.text}
+   883→   883→                            </TableCell>
+   884→   884→                            {isAdmin && (
+   885→   885→                              <TableCell className="py-3">
+   886→   886→                                <Button
+   887→   887→                                  variant="ghost"
+   888→   888→                                  size="sm"
+   889→   889→                                  className="h-7 w-7 p-0 text-slate-400 hover:text-red-500"
+   890→   890→                                  onClick={() => handleDeleteTransaction(tx.id)}
+   891→   891→                                >
+   892→   892→                                  <Trash2 className="w-3.5 h-3.5" />
+   893→   893→                                </Button>
+   894→   894→                              </TableCell>
+   895→   895→                            )}
+   896→   896→                          </TableRow>
+   897→   897→                        );
+   898→   898→                      })}
+   899→   899→                    </TableBody>
+   900→   900→                  </Table>
+   901→   901→                </div>
+   902→   902→              )}
+   903→   903→            </CardContent>
+   904→   904→          </Card>
+   905→   905→        </TabsContent>
+   906→   906→
+   907→   907→        {/* ============ Tab 2: Transfer (Admin only) ============ */}
+   908→   908→        {isAdmin && (
+   909→   909→          <TabsContent value="transfer" className="space-y-4">
+   910→   910→            {/* Transfer Cards */}
+   911→   911→            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+   912→   912→              {/* Setor ke Bank */}
+   913→   913→              <Card className="rounded-xl shadow-sm border border-amber-200 bg-amber-50/30">
+   914→   914→                <CardHeader className="pb-3 pt-5 px-5">
+   915→   915→                  <CardTitle className="text-sm font-semibold flex items-center gap-2 text-amber-800">
+   916→   916→                    <ArrowUpRight className="w-4 h-4" />
+   917→   917→                    Setor ke Bank
+   918→   918→                  </CardTitle>
+   919→   919→                  <p className="text-xs text-slate-500 mt-1">
+   920→   920→                    Kas Tunai → Tabungan BKK
+   921→   921→                  </p>
+   922→   922→                </CardHeader>
+   923→   923→                <CardContent className="px-5 pb-5 space-y-3">
+   924→   924→                  <div className="space-y-1.5">
+   925→   925→                    <Label className="text-xs">Jumlah (Rp)</Label>
+   926→   926→                    <Input
+   927→   927→                      type="number"
+   928→   928→                      placeholder="0"
+   929→   929→                      value={transferForm.direction === 'SETOR_BANK' ? transferForm.amount : ''}
+   930→   930→                      onChange={(e) => setTransferForm({ ...transferForm, direction: 'SETOR_BANK', amount: e.target.value })}
+   931→   931→                      className="h-10"
+   932→   932→                    />
+   933→   933→                  </div>
+   934→   934→                  <div className="space-y-1.5">
+   935→   935→                    <Label className="text-xs">Keterangan</Label>
+   936→   936→                    <Input
+   937→   937→                      placeholder="Mis: Setoran iuran bulanan"
+   938→   938→                      value={transferForm.direction === 'SETOR_BANK' ? transferForm.description : ''}
+   939→   939→                      onChange={(e) => setTransferForm({ ...transferForm, direction: 'SETOR_BANK', description: e.target.value })}
+   940→   940→                      className="h-10"
+   941→   941→                    />
+   942→   942→                  </div>
+   943→   943→                  <div className="space-y-1.5">
+   944→   944→                    <Label className="text-xs">Tanggal</Label>
+   945→   945→                    <Input
+   946→   946→                      type="date"
+   947→   947→                      value={transferForm.direction === 'SETOR_BANK' ? transferForm.date : new Date().toISOString().split('T')[0]}
+   948→   948→                      onChange={(e) => setTransferForm({ ...transferForm, direction: 'SETOR_BANK', date: e.target.value })}
+   949→   949→                      className="h-10"
+   950→   950→                    />
+   951→   951→                  </div>
+   952→   952→                  <Button
+   953→   953→                    className="w-full h-10 bg-amber-600 hover:bg-amber-700 text-white mt-1"
+   954→   954→                    disabled={transferSaving || (transferForm.direction === 'SETOR_BANK' && (!transferForm.amount || !transferForm.description))}
+   955→   955→                    onClick={() => handleTransfer('SETOR_BANK')}
+   956→   956→                  >
+   957→   957→                    <ArrowUpRight className="w-4 h-4 mr-1" />
+   958→   958→                    Setor ke Bank
+   959→   959→                  </Button>
+   960→   960→                </CardContent>
+   961→   961→              </Card>
+   962→   962→
+   963→   963→              {/* Tarik dari Bank */}
+   964→   964→              <Card className="rounded-xl shadow-sm border border-teal-200 bg-teal-50/30">
+   965→   965→                <CardHeader className="pb-3 pt-5 px-5">
+   966→   966→                  <CardTitle className="text-sm font-semibold flex items-center gap-2 text-teal-800">
+   967→   967→                    <ArrowDownRight className="w-4 h-4" />
+   968→   968→                    Tarik dari Bank
+   969→   969→                  </CardTitle>
+   970→   970→                  <p className="text-xs text-slate-500 mt-1">
+   971→   971→                    Tabungan BKK → Kas Tunai
+   972→   972→                  </p>
+   973→   973→                </CardHeader>
+   974→   974→                <CardContent className="px-5 pb-5 space-y-3">
+   975→   975→                  <div className="space-y-1.5">
+   976→   976→                    <Label className="text-xs">Jumlah (Rp)</Label>
+   977→   977→                    <Input
+   978→   978→                      type="number"
+   979→   979→                      placeholder="0"
+   980→   980→                      value={transferForm.direction === 'TARIK_BANK' ? transferForm.amount : ''}
+   981→   981→                      onChange={(e) => setTransferForm({ ...transferForm, direction: 'TARIK_BANK', amount: e.target.value })}
+   982→   982→                      className="h-10"
+   983→   983→                    />
+   984→   984→                  </div>
+   985→   985→                  <div className="space-y-1.5">
+   986→   986→                    <Label className="text-xs">Keterangan</Label>
+   987→   987→                    <Input
+   988→   988→                      placeholder="Mis: Penarikan untuk pembayaran"
+   989→   989→                      value={transferForm.direction === 'TARIK_BANK' ? transferForm.description : ''}
+   990→   990→                      onChange={(e) => setTransferForm({ ...transferForm, direction: 'TARIK_BANK', description: e.target.value })}
+   991→   991→                      className="h-10"
+   992→   992→                    />
+   993→   993→                  </div>
+   994→   994→                  <div className="space-y-1.5">
+   995→   995→                    <Label className="text-xs">Tanggal</Label>
+   996→   996→                    <Input
+   997→   997→                      type="date"
+   998→   998→                      value={transferForm.direction === 'TARIK_BANK' ? transferForm.date : new Date().toISOString().split('T')[0]}
+   999→   999→                      onChange={(e) => setTransferForm({ ...transferForm, direction: 'TARIK_BANK', date: e.target.value })}
+  1000→  1000→                      className="h-10"
+  1001→  1001→                    />
+  1002→  1002→                  </div>
+  1003→  1003→                  <Button
+  1004→  1004→                    className="w-full h-10 bg-teal-600 hover:bg-teal-700 text-white mt-1"
+  1005→  1005→                    disabled={transferSaving || (transferForm.direction === 'TARIK_BANK' && (!transferForm.amount || !transferForm.description))}
+  1006→  1006→                    onClick={() => handleTransfer('TARIK_BANK')}
+  1007→  1007→                  >
+  1008→  1008→                    <ArrowDownRight className="w-4 h-4 mr-1" />
+  1009→  1009→                    Tarik dari Bank
+  1010→  1010→                  </Button>
+  1011→  1011→                </CardContent>
+  1012→  1012→              </Card>
+  1013→  1013→            </div>
+  1014→  1014→
+  1015→  1015→            {/* Balance Quick View */}
+  1016→  1016→            <div className="grid grid-cols-2 gap-4">
+  1017→  1017→              <div className="flex items-center gap-3 p-4 bg-emerald-50 rounded-xl border border-emerald-200">
+  1018→  1018→                <Wallet className="w-5 h-5 text-emerald-600" />
+  1019→  1019→                <div>
+  1020→  1020→                  <p className="text-xs text-emerald-600 font-medium">Sisa Kas Tunai</p>
+  1021→  1021→                  <p className="text-sm font-bold text-emerald-700">{formatCurrency(summary.cashBalance)}</p>
+  1022→  1022→                </div>
+  1023→  1023→              </div>
+  1024→  1024→              <div className="flex items-center gap-3 p-4 bg-sky-50 rounded-xl border border-sky-200">
+  1025→  1025→                <Landmark className="w-5 h-5 text-sky-600" />
+  1026→  1026→                <div>
+  1027→  1027→                  <p className="text-xs text-sky-600 font-medium">Sisa Tabungan BKK</p>
+  1028→  1028→                  <p className="text-sm font-bold text-sky-700">{formatCurrency(summary.bankBalance)}</p>
+  1029→  1029→                </div>
+  1030→  1030→              </div>
+  1031→  1031→            </div>
+  1032→  1032→
+  1033→  1033→            {/* Transfer History */}
+  1034→  1034→            <Card className="rounded-xl shadow-sm border border-slate-200">
+  1035→  1035→              <CardHeader className="pb-3 pt-4 px-5">
+  1036→  1036→                <CardTitle className="text-sm font-semibold text-slate-700 flex items-center gap-2">
+  1037→  1037→                  <ArrowRightLeft className="w-4 h-4 text-amber-600" />
+  1038→  1038→                  Riwayat Transfer
+  1039→  1039→                </CardTitle>
+  1040→  1040→              </CardHeader>
+  1041→  1041→              <CardContent className="p-0">
+  1042→  1042→                {transferTransactions.length === 0 ? (
+  1043→  1043→                  <div className="p-10 text-center">
+  1044→  1044→                    <ArrowRightLeft className="w-10 h-10 text-slate-300 mx-auto mb-3" />
+  1045→  1045→                    <p className="text-sm text-slate-500">Belum ada riwayat transfer</p>
+  1046→  1046→                  </div>
+  1047→  1047→                ) : (
+  1048→  1048→                  <div className="overflow-x-auto max-h-[400px] overflow-y-auto">
+  1049→  1049→                    <Table>
+  1050→  1050→                      <TableHeader>
+  1051→  1051→                        <TableRow>
+  1052→  1052→                          <TableHead className="text-xs h-9">Tanggal</TableHead>
+  1053→  1053→                          <TableHead className="text-xs h-9">Jenis</TableHead>
+  1054→  1054→                          <TableHead className="text-xs h-9">Akun</TableHead>
+  1055→  1055→                          <TableHead className="text-xs h-9">Keterangan</TableHead>
+  1056→  1056→                          <TableHead className="text-xs h-9 text-right">Jumlah</TableHead>
+  1057→  1057→                          <TableHead className="text-xs h-9 w-12" />
+  1058→  1058→                        </TableRow>
+  1059→  1059→                      </TableHeader>
+  1060→  1060→                      <TableBody>
+  1061→  1061→                        {transferTransactions.map((tx) => {
+  1062→  1062→                          const isCounterpart = tx.description.startsWith('[Transfer]');
+  1063→  1063→                          const amountDisplay = getAmountDisplay(tx);
+  1064→  1064→
+  1065→  1065→                          return (
+  1066→  1066→                            <TableRow key={tx.id} className={isCounterpart ? 'bg-amber-50/50' : ''}>
+  1067→  1067→                              <TableCell className="text-xs py-3 whitespace-nowrap">
+  1068→  1068→                                {formatDateShort(tx.date)}
+  1069→  1069→                              </TableCell>
+  1070→  1070→                              <TableCell className="text-xs py-3">
+  1071→  1071→                                <Badge className="bg-amber-100 text-amber-800">
+  1072→  1072→                                  {tx.category === 'SETOR_BANK' ? (
+  1073→  1073→                                    <><ArrowUpRight className="w-3 h-3 mr-1" />Setor</>
+  1074→  1074→                                  ) : (
+  1075→  1075→                                    <><ArrowDownRight className="w-3 h-3 mr-1" />Tarik</>
+  1076→  1076→                                  )}
+  1077→  1077→                                </Badge>
+  1078→  1078→                              </TableCell>
+  1079→  1079→                              <TableCell className="text-xs py-3">
+  1080→  1080→                                <div className="flex items-center gap-1.5">
+  1081→  1081→                                  {tx.account === 'BANK_BKK' ? (
+  1082→  1082→                                    <Landmark className="w-3 h-3 text-sky-500" />
+  1083→  1083→                                  ) : (
+  1084→  1084→                                    <Wallet className="w-3 h-3 text-emerald-500" />
+  1085→  1085→                                  )}
+  1086→  1086→                                  <span className="text-slate-600">
+  1087→  1087→                                    {ACCOUNT_LABELS[tx.account] || tx.account}
+  1088→  1088→                                  </span>
+  1089→  1089→                                </div>
+  1090→  1090→                              </TableCell>
+  1091→  1091→                              <TableCell className="text-xs py-3 max-w-[200px] truncate">
+  1092→  1092→                                {isCounterpart ? (
+  1093→  1093→                                  <span className="flex items-center gap-1">
+  1094→  1094→                                    <RefreshCw className="w-3 h-3 text-amber-500 shrink-0" />
+  1095→  1095→                                    <span className="truncate">{tx.description.replace('[Transfer] ', '')}</span>
+  1096→  1096→                                  </span>
+  1097→  1097→                                ) : (
+  1098→  1098→                                  tx.description
+  1099→  1099→                                )}
+  1100→  1100→                              </TableCell>
+  1101→  1101→                              <TableCell className={`text-xs py-3 text-right font-medium whitespace-nowrap ${amountDisplay.className}`}>
+  1102→  1102→                                {amountDisplay.text}
+  1103→  1103→                              </TableCell>
+  1104→  1104→                              <TableCell className="py-3">
+  1105→  1105→                                <Button
+  1106→  1106→                                  variant="ghost"
+  1107→  1107→                                  size="sm"
+  1108→  1108→                                  className="h-7 w-7 p-0 text-slate-400 hover:text-red-500"
+  1109→  1109→                                  onClick={() => handleDeleteTransaction(tx.id)}
+  1110→  1110→                                >
+  1111→  1111→                                  <Trash2 className="w-3.5 h-3.5" />
+  1112→  1112→                                </Button>
+  1113→  1113→                              </TableCell>
+  1114→  1114→                            </TableRow>
+  1115→  1115→                          );
+  1116→  1116→                        })}
+  1117→  1117→                      </TableBody>
+  1118→  1118→                    </Table>
+  1119→  1119→                  </div>
+  1120→  1120→                )}
+  1121→  1121→              </CardContent>
+  1122→  1122→            </Card>
+  1123→  1123→          </TabsContent>
+  1124→  1124→        )}
+  1125→  1125→
+  1126→  1126→        {/* ============ Tab 3: Denda ============ */}
+  1127→  1127→        <TabsContent value="fines" className="space-y-4">
+  1128→  1128→          {/* Fine Summary Cards */}
+  1129→  1129→          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+  1130→  1130→            <Card className="rounded-xl shadow-sm border border-red-200 bg-red-50/50">
+  1131→  1131→              <CardContent className="p-5">
+  1132→  1132→                <div className="flex items-center gap-3">
+  1133→  1133→                  <div className="w-10 h-10 rounded-lg bg-red-100 flex items-center justify-center">
+  1134→  1134→                    <AlertTriangle className="w-5 h-5 text-red-600" />
+  1135→  1135→                  </div>
+  1136→  1136→                  <div>
+  1137→  1137→                    <p className="text-xs text-red-600 font-medium">Denda Belum Bayar</p>
+  1138→  1138→                    <p className="text-lg font-bold text-red-700">
+  1139→  1139→                      {formatCurrency(fineSummary.totalUnpaid)}
+  1140→  1140→                    </p>
+  1141→  1141→                  </div>
+  1142→  1142→                </div>
+  1143→  1143→              </CardContent>
+  1144→  1144→            </Card>
+  1145→  1145→
+  1146→  1146→            <Card className="rounded-xl shadow-sm border border-green-200 bg-green-50/50">
+  1147→  1147→              <CardContent className="p-5">
+  1148→  1148→                <div className="flex items-center gap-3">
+  1149→  1149→                  <div className="w-10 h-10 rounded-lg bg-green-100 flex items-center justify-center">
+  1150→  1150→                    <CheckCircle2 className="w-5 h-5 text-green-600" />
+  1151→  1151→                  </div>
+  1152→  1152→                  <div>
+  1153→  1153→                    <p className="text-xs text-green-600 font-medium">Denda Sudah Bayar</p>
+  1154→  1154→                    <p className="text-lg font-bold text-green-700">
+  1155→  1155→                      {formatCurrency(fineSummary.totalPaid)}
+  1156→  1156→                    </p>
+  1157→  1157→                  </div>
+  1158→  1158→                </div>
+  1159→  1159→              </CardContent>
+  1160→  1160→            </Card>
+  1161→  1161→          </div>
+  1162→  1162→
+  1163→  1163→          {/* Add Fine Button */}
+  1164→  1164→          {isAdmin && (
+  1165→  1165→            <div className="flex justify-end">
+  1166→  1166→              <Dialog open={fineOpen} onOpenChange={setFineOpen}>
+  1167→  1167→                <DialogTrigger asChild>
+  1168→  1168→                  <Button className="h-10 bg-slate-800 hover:bg-slate-700 text-white">
+  1169→  1169→                    <Plus className="w-4 h-4 mr-1" />
+  1170→  1170→                    Tambah Denda
+  1171→  1171→                  </Button>
+  1172→  1172→                </DialogTrigger>
+  1173→  1173→                <DialogContent className="max-w-md">
+  1174→  1174→                  <DialogHeader>
+  1175→  1175→                    <DialogTitle>Tambah Denda</DialogTitle>
+  1176→  1176→                  </DialogHeader>
+  1177→  1177→                  <div className="space-y-4 mt-2">
+  1178→  1178→                    <div className="space-y-2">
+  1179→  1179→                      <Label>Keluarga</Label>
+  1180→  1180→                      <Select
+  1181→  1181→                        value={fineForm.familyId}
+  1182→  1182→                        onValueChange={handleFamilySelect}
+  1183→  1183→                      >
+  1184→  1184→                        <SelectTrigger className="h-10 w-full">
+  1185→  1185→                          <SelectValue placeholder="Pilih keluarga" />
+  1186→  1186→                        </SelectTrigger>
+  1187→  1187→                        <SelectContent>
+  1188→  1188→                          {families.map((fam) => (
+  1189→  1189→                            <SelectItem key={fam.id} value={fam.id}>
+  1190→  1190→                              {fam.familyHead}
+  1191→  1191→                            </SelectItem>
+  1192→  1192→                          ))}
+  1193→  1193→                        </SelectContent>
+  1194→  1194→                      </Select>
+  1195→  1195→                    </div>
+  1196→  1196→
+  1197→  1197→                    {selectedFamily && selectedFamily.members.length > 0 && (
+  1198→  1198→                      <div className="space-y-2">
+  1199→  1199→                        <Label>Warga</Label>
+  1200→  1200→                        <Select
+  1201→  1201→                          value={fineForm.userId}
+  1202→  1202→                          onValueChange={(v) => setFineForm({ ...fineForm, userId: v })}
+  1203→  1203→                        >
+  1204→  1204→                          <SelectTrigger className="h-10 w-full">
+  1205→  1205→                            <SelectValue placeholder="Pilih warga" />
+  1206→  1206→                          </SelectTrigger>
+  1207→  1207→                          <SelectContent>
+  1208→  1208→                            {selectedFamily.members.map((m) => (
+  1209→  1209→                              <SelectItem key={m.id} value={m.id}>
+  1210→  1210→                                {m.name}
+  1211→  1211→                              </SelectItem>
+  1212→  1212→                            ))}
+  1213→  1213→                          </SelectContent>
+  1214→  1214→                        </Select>
+  1215→  1215→                      </div>
+  1216→  1216→                    )}
+  1217→  1217→
+  1218→  1218→                    <div className="space-y-2">
+  1219→  1219→                      <Label>Jenis Denda</Label>
+  1220→  1220→                      <Select
+  1221→  1221→                        value={fineForm.type}
+  1222→  1222→                        onValueChange={(v) => setFineForm({ ...fineForm, type: v })}
+  1223→  1223→                      >
+  1224→  1224→                        <SelectTrigger className="h-10 w-full">
+  1225→  1225→                          <SelectValue />
+  1226→  1226→                        </SelectTrigger>
+  1227→  1227→                        <SelectContent>
+  1228→  1228→                          <SelectItem value="RONDA">Ronda</SelectItem>
+  1229→  1229→                          <SelectItem value="JIMPITAN">Jimpitan</SelectItem>
+  1230→  1230→                          <SelectItem value="LAIN_LAIN">Lain-lain</SelectItem>
+  1231→  1231→                        </SelectContent>
+  1232→  1232→                      </Select>
+  1233→  1233→                    </div>
+  1234→  1234→
+  1235→  1235→                    <div className="space-y-2">
+  1236→  1236→                      <Label>Jumlah (Rp)</Label>
+  1237→  1237→                      <Input
+  1238→  1238→                        type="number"
+  1239→  1239→                        placeholder="0"
+  1240→  1240→                        value={fineForm.amount}
+  1241→  1241→                        onChange={(e) => setFineForm({ ...fineForm, amount: e.target.value })}
+  1242→  1242→                        className="h-10"
+  1243→  1243→                      />
+  1244→  1244→                    </div>
+  1245→  1245→
+  1246→  1246→                    <div className="space-y-2">
+  1247→  1247→                      <Label>Alasan</Label>
+  1248→  1248→                      <Input
+  1249→  1249→                        placeholder="Alasan denda"
+  1250→  1250→                        value={fineForm.reason}
+  1251→  1251→                        onChange={(e) => setFineForm({ ...fineForm, reason: e.target.value })}
+  1252→  1252→                        className="h-10"
+  1253→  1253→                      />
+  1254→  1254→                    </div>
+  1255→  1255→
+  1256→  1256→                    <div className="space-y-2">
+  1257→  1257→                      <Label>Tanggal</Label>
+  1258→  1258→                      <Input
+  1259→  1259→                        type="date"
+  1260→  1260→                        value={fineForm.date}
+  1261→  1261→                        onChange={(e) => setFineForm({ ...fineForm, date: e.target.value })}
+  1262→  1262→                        className="h-10"
+  1263→  1263→                      />
+  1264→  1264→                    </div>
+  1265→  1265→
+  1266→  1266→                    <div className="flex justify-end gap-3 pt-2">
+  1267→  1267→                      <Button variant="outline" onClick={() => setFineOpen(false)} className="h-10">
+  1268→  1268→                        Batal
+  1269→  1269→                      </Button>
+  1270→  1270→                      <Button
+  1271→  1271→                        onClick={handleCreateFine}
+  1272→  1272→                        disabled={fineSaving || !fineForm.userId || !fineForm.familyId || !fineForm.amount || !fineForm.reason}
+  1273→  1273→                        className="h-10 bg-slate-800 hover:bg-slate-700 text-white"
+  1274→  1274→                      >
+  1275→  1275→                        {fineSaving ? 'Menyimpan...' : 'Simpan'}
+  1276→  1276→                      </Button>
+  1277→  1277→                    </div>
+  1278→  1278→                  </div>
+  1279→  1279→                </DialogContent>
+  1280→  1280→              </Dialog>
+  1281→  1281→            </div>
+  1282→  1282→          )}
+  1283→  1283→
+  1284→  1284→          {/* Fines Table */}
+  1285→  1285→          <Card className="rounded-xl shadow-sm border border-slate-200">
+  1286→  1286→            <CardContent className="p-0">
+  1287→  1287→              {finesLoading ? (
+  1288→  1288→                <div className="p-6 space-y-3">
+  1289→  1289→                  {[1, 2, 3].map((i) => (
+  1290→  1290→                    <div key={i} className="h-4 bg-slate-100 rounded animate-pulse" />
+  1291→  1291→                  ))}
+  1292→  1292→                </div>
+  1293→  1293→              ) : fines.length === 0 ? (
+  1294→  1294→                <div className="p-10 text-center">
+  1295→  1295→                  <CheckCircle2 className="w-10 h-10 text-green-300 mx-auto mb-3" />
+  1296→  1296→                  <p className="text-sm text-slate-500">Tidak ada data denda</p>
+  1297→  1297→                </div>
+  1298→  1298→              ) : (
+  1299→  1299→                <div className="overflow-x-auto max-h-[500px] overflow-y-auto">
+  1300→  1300→                  <Table>
+  1301→  1301→                    <TableHeader>
+  1302→  1302→                      <TableRow>
+  1303→  1303→                        <TableHead className="text-xs h-9">Tanggal</TableHead>
+  1304→  1304→                        <TableHead className="text-xs h-9">Warga</TableHead>
+  1305→  1305→                        <TableHead className="text-xs h-9">KK</TableHead>
+  1306→  1306→                        <TableHead className="text-xs h-9">Jenis</TableHead>
+  1307→  1307→                        <TableHead className="text-xs h-9">Alasan</TableHead>
+  1308→  1308→                        <TableHead className="text-xs h-9 text-right">Jumlah</TableHead>
+  1309→  1309→                        <TableHead className="text-xs h-9">Status</TableHead>
+  1310→  1310→                        {isAdmin && <TableHead className="text-xs h-9 w-20" />}
+  1311→  1311→                      </TableRow>
+  1312→  1312→                    </TableHeader>
+  1313→  1313→                    <TableBody>
+  1314→  1314→                      {fines.map((fine) => (
+  1315→  1315→                        <TableRow key={fine.id}>
+  1316→  1316→                          <TableCell className="text-xs py-3 whitespace-nowrap">
+  1317→  1317→                            {formatDateShort(fine.date)}
+  1318→  1318→                          </TableCell>
+  1319→  1319→                          <TableCell className="text-xs py-3">
+  1320→  1320→                            {fine.user?.name || '-'}
+  1321→  1321→                          </TableCell>
+  1322→  1322→                          <TableCell className="text-xs py-3">
+  1323→  1323→                            {fine.family?.familyHead || '-'}
+  1324→  1324→                          </TableCell>
+  1325→  1325→                          <TableCell className="text-xs py-3">
+  1326→  1326→                            <Badge variant="outline" className="text-xs">
+  1327→  1327→                              {fine.type === FINE_TYPE.RONDA
+  1328→  1328→                                ? 'Ronda'
+  1329→  1329→                                : fine.type === FINE_TYPE.JIMPITAN
+  1330→  1330→                                ? 'Jimpitan'
+  1331→  1331→                                : 'Lain-lain'}
+  1332→  1332→                            </Badge>
+  1333→  1333→                          </TableCell>
+  1334→  1334→                          <TableCell className="text-xs py-3 max-w-[150px] truncate">
+  1335→  1335→                            {fine.reason}
+  1336→  1336→                          </TableCell>
+  1337→  1337→                          <TableCell className="text-xs py-3 text-right font-medium whitespace-nowrap">
+  1338→  1338→                            {formatCurrency(fine.amount)}
+  1339→  1339→                          </TableCell>
+  1340→  1340→                          <TableCell className="text-xs py-3">
+  1341→  1341→                            <Badge
+  1342→  1342→                              className={
+  1343→  1343→                                fine.status === FINE_STATUS.PAID
+  1344→  1344→                                  ? 'bg-green-100 text-green-800'
+  1345→  1345→                                  : 'bg-red-100 text-red-800'
+  1346→  1346→                              }
+  1347→  1347→                            >
+  1348→  1348→                              {fine.status === FINE_STATUS.PAID ? 'Lunas' : 'Belum'}
+  1349→  1349→                            </Badge>
+  1350→  1350→                          </TableCell>
+  1351→  1351→                          {isAdmin && (
+  1352→  1352→                            <TableCell className="py-3">
+  1353→  1353→                              {fine.status === FINE_STATUS.UNPAID && (
+  1354→  1354→                                <Button
+  1355→  1355→                                  variant="outline"
+  1356→  1356→                                  size="sm"
+  1357→  1357→                                  className="h-7 text-xs text-green-700 border-green-200 hover:bg-green-50"
+  1358→  1358→                                  onClick={() => handleMarkFinePaid(fine.id)}
+  1359→  1359→                                >
+  1360→  1360→                                  <CheckCircle2 className="w-3 h-3 mr-1" />
+  1361→  1361→                                  Lunas
+  1362→  1362→                                </Button>
+  1363→  1363→                              )}
+  1364→  1364→                            </TableCell>
+  1365→  1365→                          )}
+  1366→  1366→                        </TableRow>
+  1367→  1367→                      ))}
+  1368→  1368→                    </TableBody>
+  1369→  1369→                  </Table>
+  1370→  1370→                </div>
+  1371→  1371→              )}
+  1372→  1372→            </CardContent>
+  1373→  1373→          </Card>
+  1374→  1374→        </TabsContent>
+  1375→  1375→      </Tabs>
+  1376→  1376→    </div>
+  1377→  1377→  );
+  1378→  1378→}
+  1379→  1379→

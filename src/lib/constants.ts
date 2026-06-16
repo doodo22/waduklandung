@@ -66,26 +66,60 @@ export const RONDA_STATUS_LABELS: Record<string, string> = {
 export const TRANSACTION_TYPE = {
   INCOME: 'INCOME',
   EXPENSE: 'EXPENSE',
+  TRANSFER: 'TRANSFER',
 } as const;
 
 export const TRANSACTION_CATEGORY = {
+  // Income categories
   IURAN_BULANAN: 'IURAN_BULANAN',
   IURAN_RONDA: 'IURAN_RONDA',
   DENDA: 'DENDA',
   JIMPITAN: 'JIMPITAN',
+  DONASI: 'DONASI',
+  BUNGA_BANK: 'BUNGA_BANK',
+  LAIN_LAIN: 'LAIN_LAIN',
+  // Expense categories
   PEMBELIAN: 'PEMBELIAN',
   PEMBANGUNAN: 'PEMBANGUNAN',
-  LAIN_LAIN: 'LAIN_LAIN',
+  OPERASIONAL: 'OPERASIONAL',
+  BANTUAN: 'BANTUAN',
+  // Transfer categories
+  SETOR_BANK: 'SETOR_BANK',
+  TARIK_BANK: 'TARIK_BANK',
 } as const;
 
+export const INCOME_CATEGORIES = ['IURAN_BULANAN', 'IURAN_RONDA', 'DENDA', 'JIMPITAN', 'DONASI', 'BUNGA_BANK', 'LAIN_LAIN'] as const;
+export const EXPENSE_CATEGORIES = ['PEMBELIAN', 'PEMBANGUNAN', 'OPERASIONAL', 'BANTUAN', 'LAIN_LAIN'] as const;
+export const TRANSFER_CATEGORIES = ['SETOR_BANK', 'TARIK_BANK'] as const;
+
 export const CATEGORY_LABELS: Record<string, string> = {
+  // Income
   IURAN_BULANAN: 'Iuran Bulanan',
   IURAN_RONDA: 'Iuran Ronda',
   DENDA: 'Denda',
   JIMPITAN: 'Jimpitan',
+  DONASI: 'Donasi',
+  BUNGA_BANK: 'Bunga Bank',
+  LAIN_LAIN: 'Lain-lain',
+  // Expense
   PEMBELIAN: 'Pembelian',
   PEMBANGUNAN: 'Pembangunan',
-  LAIN_LAIN: 'Lain-lain',
+  OPERASIONAL: 'Operasional',
+  BANTUAN: 'Bantuan Warga',
+  // Transfer
+  SETOR_BANK: 'Setor ke Bank',
+  TARIK_BANK: 'Tarik dari Bank',
+};
+
+// Account types for dual-account system
+export const ACCOUNT_TYPE = {
+  CASH: 'CASH',
+  BANK_BKK: 'BANK_BKK',
+} as const;
+
+export const ACCOUNT_LABELS: Record<string, string> = {
+  CASH: 'Kas Tunai',
+  BANK_BKK: 'Tabungan BKK',
 };
 
 // Fine

@@ -275,11 +275,12 @@ model SelapananTarikan {
 
 model Transaction {
   id              String   @id @default(cuid())
-  type            String   // INCOME, EXPENSE
-  category        String   // IURAN_BULANAN, IURAN_RONDA, DENDA, JIMPITAN, PEMBELIAN, PEMBANGUNAN, LAIN_LAIN
+  type            String   // INCOME, EXPENSE, TRANSFER
+  category        String   // IURAN_BULANAN, IURAN_RONDA, DENDA, JIMPITAN, PEMBELIAN, PEMBANGUNAN, OPERASIONAL, BANTUAN, DONASI, BUNGA_BANK, SETOR_BANK, TARIK_BANK, LAIN_LAIN
   amount          Int      // dalam Rupiah
   description     String
   date            String   // YYYY-MM-DD
+  account         String   @default("CASH") // CASH, BANK_BKK — sumber/tujuan dana
   selapananId     String?
   createdBy       String   // userId
   createdAt       DateTime @default(now())

@@ -1,0 +1,896 @@
+     1→'use client';
+     2→
+     3→import { useState, useEffect, useCallback } from 'react';
+     4→import { api } from '@/lib/api-client';
+     5→import {
+     6→  formatCurrency,
+     7→  formatDateShort,
+     8→  CATEGORY_LABELS,
+     9→  TRANSACTION_TYPE,
+    10→  TRANSACTION_CATEGORY,
+    11→  FINE_TYPE,
+    12→  FINE_STATUS,
+    13→} from '@/lib/constants';
+    14→import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+    15→import { Button } from '@/components/ui/button';
+    16→import { Badge } from '@/components/ui/badge';
+    17→import {
+    18→  Dialog,
+    19→  DialogContent,
+    20→  DialogHeader,
+    21→  DialogTitle,
+    22→  DialogTrigger,
+    23→} from '@/components/ui/dialog';
+    24→import { Input } from '@/components/ui/input';
+    25→import { Label } from '@/components/ui/label';
+    26→import {
+    27→  Select,
+    28→  SelectContent,
+    29→  SelectItem,
+    30→  SelectTrigger,
+    31→  SelectValue,
+    32→} from '@/components/ui/select';
+    33→import {
+    34→  Table,
+    35→  TableBody,
+    36→  TableCell,
+    37→  TableHead,
+    38→  TableHeader,
+    39→  TableRow,
+    40→} from '@/components/ui/table';
+    41→import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+    42→import {
+    43→  Wallet,
+    44→  TrendingUp,
+    45→  TrendingDown,
+    46→  Plus,
+    47→  Trash2,
+    48→  CheckCircle2,
+    49→  AlertTriangle,
+    50→  Search,
+    51→  X,
+    52→} from 'lucide-react';
+    53→
+    54→// Types
+    55→interface Transaction {
+    56→  id: string;
+    57→  type: string;
+    58→  category: string;
+    59→  amount: number;
+    60→  description: string;
+    61→  date: string;
+    62→  selapananId: string | null;
+    63→  createdBy: string;
+    64→  createdAt: string;
+    65→}
+    66→
+    67→interface TransactionSummary {
+    68→  totalIncome: number;
+    69→  totalExpense: number;
+    70→  balance: number;
+    71→}
+    72→
+    73→interface Fine {
+    74→  id: string;
+    75→  userId: string;
+    76→  familyId: string;
+    77→  type: string;
+    78→  amount: number;
+    79→  reason: string;
+    80→  status: string;
+    81→  date: string;
+    82→  selapananId: string | null;
+    83→  user: { id: string; name: string };
+    84→  family: { id: string; familyHead: string };
+    85→}
+    86→
+    87→interface FineSummary {
+    88→  totalUnpaid: number;
+    89→  totalPaid: number;
+    90→}
+    91→
+    92→interface Family {
+    93→  id: string;
+    94→  familyHead: string;
+    95→  address: string;
+    96→  members: { id: string; name: string }[];
+    97→}
+    98→
+    99→interface Props {
+   100→  userId: string;
+   101→  familyId: string | null;
+   102→  isAdmin: boolean;
+   103→}
+   104→
+   105→export function KeuanganPage({ userId, familyId, isAdmin }: Props) {
+   106→  // Transactions state
+   107→  const [transactions, setTransactions] = useState<Transaction[]>([]);
+   108→  const [summary, setSummary] = useState<TransactionSummary>({
+   109→    totalIncome: 0,
+   110→    totalExpense: 0,
+   111→    balance: 0,
+   112→  });
+   113→  const [loading, setLoading] = useState(true);
+   114→
+   115→  // Filters
+   116→  const [filterType, setFilterType] = useState<string>('all');
+   117→  const [filterCategory, setFilterCategory] = useState<string>('all');
+   118→  const [filterFrom, setFilterFrom] = useState('');
+   119→  const [filterTo, setFilterTo] = useState('');
+   120→
+   121→  // Transaction form
+   122→  const [txOpen, setTxOpen] = useState(false);
+   123→  const [txForm, setTxForm] = useState({
+   124→    type: 'INCOME',
+   125→    category: 'IURAN_BULANAN',
+   126→    amount: '',
+   127→    description: '',
+   128→    date: new Date().toISOString().split('T')[0],
+   129→  });
+   130→  const [txSaving, setTxSaving] = useState(false);
+   131→
+   132→  // Fines state
+   133→  const [fines, setFines] = useState<Fine[]>([]);
+   134→  const [fineSummary, setFineSummary] = useState<FineSummary>({ totalUnpaid: 0, totalPaid: 0 });
+   135→  const [finesLoading, setFinesLoading] = useState(true);
+   136→
+   137→  // Fine form
+   138→  const [fineOpen, setFineOpen] = useState(false);
+   139→  const [fineForm, setFineForm] = useState({
+   140→    userId: '',
+   141→    familyId: '',
+   142→    type: 'RONDA',
+   143→    amount: '',
+   144→    reason: '',
+   145→    date: new Date().toISOString().split('T')[0],
+   146→  });
+   147→  const [fineSaving, setFineSaving] = useState(false);
+   148→
+   149→  // Families for fine form dropdown
+   150→  const [families, setFamilies] = useState<Family[]>([]);
+   151→
+   152→  const fetchTransactions = useCallback(async () => {
+   153→    try {
+   154→      const params = new URLSearchParams();
+   155→      if (filterType && filterType !== 'all') params.set('type', filterType);
+   156→      if (filterCategory && filterCategory !== 'all') params.set('category', filterCategory);
+   157→      if (filterFrom) params.set('from', filterFrom);
+   158→      if (filterTo) params.set('to', filterTo);
+   159→
+   160→      const query = params.toString();
+   161→      const res = await api.get(`/transactions${query ? `?${query}` : ''}`);
+   162→      const data = await res.json();
+   163→      if (res.ok) {
+   164→        setTransactions(data.transactions || []);
+   165→        setSummary(
+   166→          data.summary || { totalIncome: 0, totalExpense: 0, balance: 0 }
+   167→        );
+   168→      }
+   169→    } catch {
+   170→      // silently handle
+   171→    } finally {
+   172→      setLoading(false);
+   173→    }
+   174→  }, [filterType, filterCategory, filterFrom, filterTo]);
+   175→
+   176→  const fetchFines = useCallback(async () => {
+   177→    try {
+   178→      const res = await api.get('/fines');
+   179→      const data = await res.json();
+   180→      if (res.ok) {
+   181→        setFines(data.fines || []);
+   182→        setFineSummary(data.summary || { totalUnpaid: 0, totalPaid: 0 });
+   183→      }
+   184→    } catch {
+   185→      // silently handle
+   186→    } finally {
+   187→      setFinesLoading(false);
+   188→    }
+   189→  }, []);
+   190→
+   191→  const fetchFamilies = useCallback(async () => {
+   192→    if (!isAdmin) return;
+   193→    try {
+   194→      const res = await api.get('/families');
+   195→      const data = await res.json();
+   196→      if (res.ok) {
+   197→        setFamilies(data.families || []);
+   198→      }
+   199→    } catch {
+   200→      // silently handle
+   201→    }
+   202→  }, [isAdmin]);
+   203→
+   204→  useEffect(() => {
+   205→    fetchTransactions();
+   206→  }, [fetchTransactions]);
+   207→
+   208→  useEffect(() => {
+   209→    fetchFines();
+   210→    fetchFamilies();
+   211→  }, [fetchFines, fetchFamilies]);
+   212→
+   213→  const handleCreateTransaction = async () => {
+   214→    if (!txForm.type || !txForm.category || !txForm.amount || !txForm.description || !txForm.date)
+   215→      return;
+   216→    setTxSaving(true);
+   217→    try {
+   218→      const res = await api.post('/transactions', {
+   219→        type: txForm.type,
+   220→        category: txForm.category,
+   221→        amount: parseInt(txForm.amount, 10),
+   222→        description: txForm.description,
+   223→        date: txForm.date,
+   224→      });
+   225→      if (res.ok) {
+   226→        setTxOpen(false);
+   227→        setTxForm({
+   228→          type: 'INCOME',
+   229→          category: 'IURAN_BULANAN',
+   230→          amount: '',
+   231→          description: '',
+   232→          date: new Date().toISOString().split('T')[0],
+   233→        });
+   234→        fetchTransactions();
+   235→      }
+   236→    } catch {
+   237→      // silently handle
+   238→    } finally {
+   239→      setTxSaving(false);
+   240→    }
+   241→  };
+   242→
+   243→  const handleDeleteTransaction = async (id: string) => {
+   244→    try {
+   245→      const res = await api.delete(`/transactions?id=${id}`);
+   246→      if (res.ok) {
+   247→        fetchTransactions();
+   248→      }
+   249→    } catch {
+   250→      // silently handle
+   251→    }
+   252→  };
+   253→
+   254→  const handleCreateFine = async () => {
+   255→    if (!fineForm.userId || !fineForm.familyId || !fineForm.type || !fineForm.amount || !fineForm.reason || !fineForm.date)
+   256→      return;
+   257→    setFineSaving(true);
+   258→    try {
+   259→      const res = await api.post('/fines', {
+   260→        userId: fineForm.userId,
+   261→        familyId: fineForm.familyId,
+   262→        type: fineForm.type,
+   263→        amount: parseInt(fineForm.amount, 10),
+   264→        reason: fineForm.reason,
+   265→        date: fineForm.date,
+   266→      });
+   267→      if (res.ok) {
+   268→        setFineOpen(false);
+   269→        setFineForm({
+   270→          userId: '',
+   271→          familyId: '',
+   272→          type: 'RONDA',
+   273→          amount: '',
+   274→          reason: '',
+   275→          date: new Date().toISOString().split('T')[0],
+   276→        });
+   277→        fetchFines();
+   278→      }
+   279→    } catch {
+   280→      // silently handle
+   281→    } finally {
+   282→      setFineSaving(false);
+   283→    }
+   284→  };
+   285→
+   286→  const handleMarkFinePaid = async (id: string) => {
+   287→    try {
+   288→      const res = await api.put('/fines', { id, status: 'PAID' });
+   289→      if (res.ok) {
+   290→        fetchFines();
+   291→      }
+   292→    } catch {
+   293→      // silently handle
+   294→    }
+   295→  };
+   296→
+   297→  const handleFamilySelect = (familyId: string) => {
+   298→    const family = families.find((f) => f.id === familyId);
+   299→    setFineForm((prev) => ({
+   300→      ...prev,
+   301→      familyId,
+   302→      userId: family?.members?.[0]?.id || '',
+   303→    }));
+   304→  };
+   305→
+   306→  const selectedFamily = families.find((f) => f.id === fineForm.familyId);
+   307→
+   308→  const clearFilters = () => {
+   309→    setFilterType('all');
+   310→    setFilterCategory('all');
+   311→    setFilterFrom('');
+   312→    setFilterTo('');
+   313→  };
+   314→
+   315→  const hasActiveFilters = filterType !== 'all' || filterCategory !== 'all' || filterFrom || filterTo;
+   316→
+   317→  // Category options for transaction type
+   318→  const categoryOptions = Object.entries(CATEGORY_LABELS);
+   319→
+   320→  if (loading) {
+   321→    return (
+   322→      <div className="space-y-6">
+   323→        <h2 className="text-xl font-bold text-slate-800">Keuangan</h2>
+   324→        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+   325→          {[1, 2, 3].map((i) => (
+   326→            <Card key={i} className="rounded-xl shadow-sm border border-slate-200 animate-pulse">
+   327→              <CardContent className="p-5">
+   328→                <div className="h-4 bg-slate-200 rounded w-1/2 mb-3" />
+   329→                <div className="h-6 bg-slate-200 rounded w-3/4" />
+   330→              </CardContent>
+   331→            </Card>
+   332→          ))}
+   333→        </div>
+   334→      </div>
+   335→    );
+   336→  }
+   337→
+   338→  return (
+   339→    <div className="space-y-6">
+   340→      <div className="flex items-center justify-between">
+   341→        <div>
+   342→          <h2 className="text-xl font-bold text-slate-800">Keuangan</h2>
+   343→          <p className="text-sm text-slate-500 mt-1">Kelola keuangan dan denda RT</p>
+   344→        </div>
+   345→        {isAdmin && (
+   346→          <Dialog open={txOpen} onOpenChange={setTxOpen}>
+   347→            <DialogTrigger asChild>
+   348→              <Button className="h-10 bg-slate-800 hover:bg-slate-700 text-white">
+   349→                <Plus className="w-4 h-4 mr-1" />
+   350→                Tambah Transaksi
+   351→              </Button>
+   352→            </DialogTrigger>
+   353→            <DialogContent className="max-w-md">
+   354→              <DialogHeader>
+   355→                <DialogTitle>Tambah Transaksi</DialogTitle>
+   356→              </DialogHeader>
+   357→              <div className="space-y-4 mt-2">
+   358→                <div className="space-y-2">
+   359→                  <Label>Jenis</Label>
+   360→                  <Select
+   361→                    value={txForm.type}
+   362→                    onValueChange={(v) => setTxForm({ ...txForm, type: v })}
+   363→                  >
+   364→                    <SelectTrigger className="h-10 w-full">
+   365→                      <SelectValue />
+   366→                    </SelectTrigger>
+   367→                    <SelectContent>
+   368→                      <SelectItem value="INCOME">Pemasukan</SelectItem>
+   369→                      <SelectItem value="EXPENSE">Pengeluaran</SelectItem>
+   370→                    </SelectContent>
+   371→                  </Select>
+   372→                </div>
+   373→
+   374→                <div className="space-y-2">
+   375→                  <Label>Kategori</Label>
+   376→                  <Select
+   377→                    value={txForm.category}
+   378→                    onValueChange={(v) => setTxForm({ ...txForm, category: v })}
+   379→                  >
+   380→                    <SelectTrigger className="h-10 w-full">
+   381→                      <SelectValue />
+   382→                    </SelectTrigger>
+   383→                    <SelectContent>
+   384→                      {categoryOptions.map(([key, label]) => (
+   385→                        <SelectItem key={key} value={key}>
+   386→                          {label}
+   387→                        </SelectItem>
+   388→                      ))}
+   389→                    </SelectContent>
+   390→                  </Select>
+   391→                </div>
+   392→
+   393→                <div className="space-y-2">
+   394→                  <Label>Jumlah (Rp)</Label>
+   395→                  <Input
+   396→                    type="number"
+   397→                    placeholder="0"
+   398→                    value={txForm.amount}
+   399→                    onChange={(e) => setTxForm({ ...txForm, amount: e.target.value })}
+   400→                    className="h-10"
+   401→                  />
+   402→                </div>
+   403→
+   404→                <div className="space-y-2">
+   405→                  <Label>Keterangan</Label>
+   406→                  <Input
+   407→                    placeholder="Deskripsi transaksi"
+   408→                    value={txForm.description}
+   409→                    onChange={(e) => setTxForm({ ...txForm, description: e.target.value })}
+   410→                    className="h-10"
+   411→                  />
+   412→                </div>
+   413→
+   414→                <div className="space-y-2">
+   415→                  <Label>Tanggal</Label>
+   416→                  <Input
+   417→                    type="date"
+   418→                    value={txForm.date}
+   419→                    onChange={(e) => setTxForm({ ...txForm, date: e.target.value })}
+   420→                    className="h-10"
+   421→                  />
+   422→                </div>
+   423→
+   424→                <div className="flex justify-end gap-3 pt-2">
+   425→                  <Button variant="outline" onClick={() => setTxOpen(false)} className="h-10">
+   426→                    Batal
+   427→                  </Button>
+   428→                  <Button
+   429→                    onClick={handleCreateTransaction}
+   430→                    disabled={txSaving || !txForm.amount || !txForm.description}
+   431→                    className="h-10 bg-slate-800 hover:bg-slate-700 text-white"
+   432→                  >
+   433→                    {txSaving ? 'Menyimpan...' : 'Simpan'}
+   434→                  </Button>
+   435→                </div>
+   436→              </div>
+   437→            </DialogContent>
+   438→          </Dialog>
+   439→        )}
+   440→      </div>
+   441→
+   442→      {/* Stat Cards */}
+   443→      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+   444→        <Card className="rounded-xl shadow-sm border border-green-200 bg-green-50/50">
+   445→          <CardContent className="p-5">
+   446→            <div className="flex items-center gap-3">
+   447→              <div className="w-10 h-10 rounded-lg bg-green-100 flex items-center justify-center">
+   448→                <TrendingUp className="w-5 h-5 text-green-600" />
+   449→              </div>
+   450→              <div>
+   451→                <p className="text-xs text-green-600 font-medium">Pemasukan</p>
+   452→                <p className="text-lg font-bold text-green-700">
+   453→                  {formatCurrency(summary.totalIncome)}
+   454→                </p>
+   455→              </div>
+   456→            </div>
+   457→          </CardContent>
+   458→        </Card>
+   459→
+   460→        <Card className="rounded-xl shadow-sm border border-red-200 bg-red-50/50">
+   461→          <CardContent className="p-5">
+   462→            <div className="flex items-center gap-3">
+   463→              <div className="w-10 h-10 rounded-lg bg-red-100 flex items-center justify-center">
+   464→                <TrendingDown className="w-5 h-5 text-red-600" />
+   465→              </div>
+   466→              <div>
+   467→                <p className="text-xs text-red-600 font-medium">Pengeluaran</p>
+   468→                <p className="text-lg font-bold text-red-700">
+   469→                  {formatCurrency(summary.totalExpense)}
+   470→                </p>
+   471→              </div>
+   472→            </div>
+   473→          </CardContent>
+   474→        </Card>
+   475→
+   476→        <Card className="rounded-xl shadow-sm border border-slate-300 bg-slate-800">
+   477→          <CardContent className="p-5">
+   478→            <div className="flex items-center gap-3">
+   479→              <div className="w-10 h-10 rounded-lg bg-slate-700 flex items-center justify-center">
+   480→                <Wallet className="w-5 h-5 text-slate-200" />
+   481→              </div>
+   482→              <div>
+   483→                <p className="text-xs text-slate-300 font-medium">Saldo</p>
+   484→                <p className="text-lg font-bold text-white">
+   485→                  {formatCurrency(summary.balance)}
+   486→                </p>
+   487→              </div>
+   488→            </div>
+   489→          </CardContent>
+   490→        </Card>
+   491→      </div>
+   492→
+   493→      {/* Tabs */}
+   494→      <Tabs defaultValue="transactions" className="space-y-4">
+   495→        <TabsList>
+   496→          <TabsTrigger value="transactions">Transaksi</TabsTrigger>
+   497→          <TabsTrigger value="fines">Denda</TabsTrigger>
+   498→        </TabsList>
+   499→
+   500→        {/* Transactions Tab */}
+   501→        <TabsContent value="transactions" className="space-y-4">
+   502→          {/* Filters */}
+   503→          <Card className="rounded-xl shadow-sm border border-slate-200">
+   504→            <CardContent className="p-4">
+   505→              <div className="flex flex-wrap items-end gap-3">
+   506→                <div className="space-y-1">
+   507→                  <Label className="text-xs text-slate-500">Jenis</Label>
+   508→                  <Select value={filterType} onValueChange={setFilterType}>
+   509→                    <SelectTrigger className="h-9 w-[140px]">
+   510→                      <SelectValue />
+   511→                    </SelectTrigger>
+   512→                    <SelectContent>
+   513→                      <SelectItem value="all">Semua</SelectItem>
+   514→                      <SelectItem value="INCOME">Pemasukan</SelectItem>
+   515→                      <SelectItem value="EXPENSE">Pengeluaran</SelectItem>
+   516→                    </SelectContent>
+   517→                  </Select>
+   518→                </div>
+   519→
+   520→                <div className="space-y-1">
+   521→                  <Label className="text-xs text-slate-500">Kategori</Label>
+   522→                  <Select value={filterCategory} onValueChange={setFilterCategory}>
+   523→                    <SelectTrigger className="h-9 w-[160px]">
+   524→                      <SelectValue />
+   525→                    </SelectTrigger>
+   526→                    <SelectContent>
+   527→                      <SelectItem value="all">Semua</SelectItem>
+   528→                      {categoryOptions.map(([key, label]) => (
+   529→                        <SelectItem key={key} value={key}>
+   530→                          {label}
+   531→                        </SelectItem>
+   532→                      ))}
+   533→                    </SelectContent>
+   534→                  </Select>
+   535→                </div>
+   536→
+   537→                <div className="space-y-1">
+   538→                  <Label className="text-xs text-slate-500">Dari</Label>
+   539→                  <Input
+   540→                    type="date"
+   541→                    value={filterFrom}
+   542→                    onChange={(e) => setFilterFrom(e.target.value)}
+   543→                    className="h-9 w-[150px]"
+   544→                  />
+   545→                </div>
+   546→
+   547→                <div className="space-y-1">
+   548→                  <Label className="text-xs text-slate-500">Sampai</Label>
+   549→                  <Input
+   550→                    type="date"
+   551→                    value={filterTo}
+   552→                    onChange={(e) => setFilterTo(e.target.value)}
+   553→                    className="h-9 w-[150px]"
+   554→                  />
+   555→                </div>
+   556→
+   557→                {hasActiveFilters && (
+   558→                  <Button variant="ghost" size="sm" onClick={clearFilters} className="h-9 text-slate-500">
+   559→                    <X className="w-3.5 h-3.5 mr-1" />
+   560→                    Reset
+   561→                  </Button>
+   562→                )}
+   563→              </div>
+   564→            </CardContent>
+   565→          </Card>
+   566→
+   567→          {/* Transaction Table */}
+   568→          <Card className="rounded-xl shadow-sm border border-slate-200">
+   569→            <CardContent className="p-0">
+   570→              {transactions.length === 0 ? (
+   571→                <div className="p-10 text-center">
+   572→                  <Search className="w-10 h-10 text-slate-300 mx-auto mb-3" />
+   573→                  <p className="text-sm text-slate-500">Tidak ada transaksi ditemukan</p>
+   574→                  {hasActiveFilters && (
+   575→                    <p className="text-xs text-slate-400 mt-1">
+   576→                      Coba ubah filter pencarian Anda
+   577→                    </p>
+   578→                  )}
+   579→                </div>
+   580→              ) : (
+   581→                <div className="overflow-x-auto">
+   582→                  <Table>
+   583→                    <TableHeader>
+   584→                      <TableRow>
+   585→                        <TableHead className="text-xs h-9">Tanggal</TableHead>
+   586→                        <TableHead className="text-xs h-9">Kategori</TableHead>
+   587→                        <TableHead className="text-xs h-9">Keterangan</TableHead>
+   588→                        <TableHead className="text-xs h-9 text-right">Jumlah</TableHead>
+   589→                        {isAdmin && (
+   590→                          <TableHead className="text-xs h-9 w-12" />
+   591→                        )}
+   592→                      </TableRow>
+   593→                    </TableHeader>
+   594→                    <TableBody>
+   595→                      {transactions.map((tx) => (
+   596→                        <TableRow key={tx.id}>
+   597→                          <TableCell className="text-xs py-3 whitespace-nowrap">
+   598→                            {formatDateShort(tx.date)}
+   599→                          </TableCell>
+   600→                          <TableCell className="text-xs py-3">
+   601→                            <Badge
+   602→                              className={
+   603→                                tx.type === 'INCOME'
+   604→                                  ? 'bg-green-100 text-green-800'
+   605→                                  : 'bg-red-100 text-red-800'
+   606→                              }
+   607→                            >
+   608→                              {CATEGORY_LABELS[tx.category] || tx.category}
+   609→                            </Badge>
+   610→                          </TableCell>
+   611→                          <TableCell className="text-xs py-3 max-w-[200px] truncate">
+   612→                            {tx.description}
+   613→                          </TableCell>
+   614→                          <TableCell
+   615→                            className={`text-xs py-3 text-right font-medium whitespace-nowrap ${
+   616→                              tx.type === 'INCOME' ? 'text-green-700' : 'text-red-700'
+   617→                            }`}
+   618→                          >
+   619→                            {tx.type === 'INCOME' ? '+' : '-'} {formatCurrency(tx.amount)}
+   620→                          </TableCell>
+   621→                          {isAdmin && (
+   622→                            <TableCell className="py-3">
+   623→                              <Button
+   624→                                variant="ghost"
+   625→                                size="sm"
+   626→                                className="h-7 w-7 p-0 text-slate-400 hover:text-red-500"
+   627→                                onClick={() => handleDeleteTransaction(tx.id)}
+   628→                              >
+   629→                                <Trash2 className="w-3.5 h-3.5" />
+   630→                              </Button>
+   631→                            </TableCell>
+   632→                          )}
+   633→                        </TableRow>
+   634→                      ))}
+   635→                    </TableBody>
+   636→                  </Table>
+   637→                </div>
+   638→              )}
+   639→            </CardContent>
+   640→          </Card>
+   641→        </TabsContent>
+   642→
+   643→        {/* Fines Tab */}
+   644→        <TabsContent value="fines" className="space-y-4">
+   645→          {/* Fine Summary Cards */}
+   646→          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+   647→            <Card className="rounded-xl shadow-sm border border-red-200 bg-red-50/50">
+   648→              <CardContent className="p-5">
+   649→                <div className="flex items-center gap-3">
+   650→                  <div className="w-10 h-10 rounded-lg bg-red-100 flex items-center justify-center">
+   651→                    <AlertTriangle className="w-5 h-5 text-red-600" />
+   652→                  </div>
+   653→                  <div>
+   654→                    <p className="text-xs text-red-600 font-medium">Denda Belum Bayar</p>
+   655→                    <p className="text-lg font-bold text-red-700">
+   656→                      {formatCurrency(fineSummary.totalUnpaid)}
+   657→                    </p>
+   658→                  </div>
+   659→                </div>
+   660→              </CardContent>
+   661→            </Card>
+   662→
+   663→            <Card className="rounded-xl shadow-sm border border-green-200 bg-green-50/50">
+   664→              <CardContent className="p-5">
+   665→                <div className="flex items-center gap-3">
+   666→                  <div className="w-10 h-10 rounded-lg bg-green-100 flex items-center justify-center">
+   667→                    <CheckCircle2 className="w-5 h-5 text-green-600" />
+   668→                  </div>
+   669→                  <div>
+   670→                    <p className="text-xs text-green-600 font-medium">Denda Sudah Bayar</p>
+   671→                    <p className="text-lg font-bold text-green-700">
+   672→                      {formatCurrency(fineSummary.totalPaid)}
+   673→                    </p>
+   674→                  </div>
+   675→                </div>
+   676→              </CardContent>
+   677→            </Card>
+   678→          </div>
+   679→
+   680→          {/* Add Fine Button */}
+   681→          {isAdmin && (
+   682→            <div className="flex justify-end">
+   683→              <Dialog open={fineOpen} onOpenChange={setFineOpen}>
+   684→                <DialogTrigger asChild>
+   685→                  <Button className="h-10 bg-slate-800 hover:bg-slate-700 text-white">
+   686→                    <Plus className="w-4 h-4 mr-1" />
+   687→                    Tambah Denda
+   688→                  </Button>
+   689→                </DialogTrigger>
+   690→                <DialogContent className="max-w-md">
+   691→                  <DialogHeader>
+   692→                    <DialogTitle>Tambah Denda</DialogTitle>
+   693→                  </DialogHeader>
+   694→                  <div className="space-y-4 mt-2">
+   695→                    <div className="space-y-2">
+   696→                      <Label>Keluarga</Label>
+   697→                      <Select
+   698→                        value={fineForm.familyId}
+   699→                        onValueChange={handleFamilySelect}
+   700→                      >
+   701→                        <SelectTrigger className="h-10 w-full">
+   702→                          <SelectValue placeholder="Pilih keluarga" />
+   703→                        </SelectTrigger>
+   704→                        <SelectContent>
+   705→                          {families.map((fam) => (
+   706→                            <SelectItem key={fam.id} value={fam.id}>
+   707→                              {fam.familyHead}
+   708→                            </SelectItem>
+   709→                          ))}
+   710→                        </SelectContent>
+   711→                      </Select>
+   712→                    </div>
+   713→
+   714→                    {selectedFamily && selectedFamily.members.length > 0 && (
+   715→                      <div className="space-y-2">
+   716→                        <Label>Warga</Label>
+   717→                        <Select
+   718→                          value={fineForm.userId}
+   719→                          onValueChange={(v) => setFineForm({ ...fineForm, userId: v })}
+   720→                        >
+   721→                          <SelectTrigger className="h-10 w-full">
+   722→                            <SelectValue placeholder="Pilih warga" />
+   723→                          </SelectTrigger>
+   724→                          <SelectContent>
+   725→                            {selectedFamily.members.map((m) => (
+   726→                              <SelectItem key={m.id} value={m.id}>
+   727→                                {m.name}
+   728→                              </SelectItem>
+   729→                            ))}
+   730→                          </SelectContent>
+   731→                        </Select>
+   732→                      </div>
+   733→                    )}
+   734→
+   735→                    <div className="space-y-2">
+   736→                      <Label>Jenis Denda</Label>
+   737→                      <Select
+   738→                        value={fineForm.type}
+   739→                        onValueChange={(v) => setFineForm({ ...fineForm, type: v })}
+   740→                      >
+   741→                        <SelectTrigger className="h-10 w-full">
+   742→                          <SelectValue />
+   743→                        </SelectTrigger>
+   744→                        <SelectContent>
+   745→                          <SelectItem value="RONDA">Ronda</SelectItem>
+   746→                          <SelectItem value="JIMPITAN">Jimpitan</SelectItem>
+   747→                          <SelectItem value="LAIN_LAIN">Lain-lain</SelectItem>
+   748→                        </SelectContent>
+   749→                      </Select>
+   750→                    </div>
+   751→
+   752→                    <div className="space-y-2">
+   753→                      <Label>Jumlah (Rp)</Label>
+   754→                      <Input
+   755→                        type="number"
+   756→                        placeholder="0"
+   757→                        value={fineForm.amount}
+   758→                        onChange={(e) => setFineForm({ ...fineForm, amount: e.target.value })}
+   759→                        className="h-10"
+   760→                      />
+   761→                    </div>
+   762→
+   763→                    <div className="space-y-2">
+   764→                      <Label>Alasan</Label>
+   765→                      <Input
+   766→                        placeholder="Alasan denda"
+   767→                        value={fineForm.reason}
+   768→                        onChange={(e) => setFineForm({ ...fineForm, reason: e.target.value })}
+   769→                        className="h-10"
+   770→                      />
+   771→                    </div>
+   772→
+   773→                    <div className="space-y-2">
+   774→                      <Label>Tanggal</Label>
+   775→                      <Input
+   776→                        type="date"
+   777→                        value={fineForm.date}
+   778→                        onChange={(e) => setFineForm({ ...fineForm, date: e.target.value })}
+   779→                        className="h-10"
+   780→                      />
+   781→                    </div>
+   782→
+   783→                    <div className="flex justify-end gap-3 pt-2">
+   784→                      <Button variant="outline" onClick={() => setFineOpen(false)} className="h-10">
+   785→                        Batal
+   786→                      </Button>
+   787→                      <Button
+   788→                        onClick={handleCreateFine}
+   789→                        disabled={fineSaving || !fineForm.userId || !fineForm.familyId || !fineForm.amount || !fineForm.reason}
+   790→                        className="h-10 bg-slate-800 hover:bg-slate-700 text-white"
+   791→                      >
+   792→                        {fineSaving ? 'Menyimpan...' : 'Simpan'}
+   793→                      </Button>
+   794→                    </div>
+   795→                  </div>
+   796→                </DialogContent>
+   797→              </Dialog>
+   798→            </div>
+   799→          )}
+   800→
+   801→          {/* Fines Table */}
+   802→          <Card className="rounded-xl shadow-sm border border-slate-200">
+   803→            <CardContent className="p-0">
+   804→              {finesLoading ? (
+   805→                <div className="p-6 space-y-3">
+   806→                  {[1, 2, 3].map((i) => (
+   807→                    <div key={i} className="h-4 bg-slate-100 rounded animate-pulse" />
+   808→                  ))}
+   809→                </div>
+   810→              ) : fines.length === 0 ? (
+   811→                <div className="p-10 text-center">
+   812→                  <CheckCircle2 className="w-10 h-10 text-green-300 mx-auto mb-3" />
+   813→                  <p className="text-sm text-slate-500">Tidak ada data denda</p>
+   814→                </div>
+   815→              ) : (
+   816→                <div className="overflow-x-auto max-h-[500px] overflow-y-auto">
+   817→                  <Table>
+   818→                    <TableHeader>
+   819→                      <TableRow>
+   820→                        <TableHead className="text-xs h-9">Tanggal</TableHead>
+   821→                        <TableHead className="text-xs h-9">Warga</TableHead>
+   822→                        <TableHead className="text-xs h-9">KK</TableHead>
+   823→                        <TableHead className="text-xs h-9">Jenis</TableHead>
+   824→                        <TableHead className="text-xs h-9">Alasan</TableHead>
+   825→                        <TableHead className="text-xs h-9 text-right">Jumlah</TableHead>
+   826→                        <TableHead className="text-xs h-9">Status</TableHead>
+   827→                        {isAdmin && <TableHead className="text-xs h-9 w-20" />}
+   828→                      </TableRow>
+   829→                    </TableHeader>
+   830→                    <TableBody>
+   831→                      {fines.map((fine) => (
+   832→                        <TableRow key={fine.id}>
+   833→                          <TableCell className="text-xs py-3 whitespace-nowrap">
+   834→                            {formatDateShort(fine.date)}
+   835→                          </TableCell>
+   836→                          <TableCell className="text-xs py-3">
+   837→                            {fine.user?.name || '-'}
+   838→                          </TableCell>
+   839→                          <TableCell className="text-xs py-3">
+   840→                            {fine.family?.familyHead || '-'}
+   841→                          </TableCell>
+   842→                          <TableCell className="text-xs py-3">
+   843→                            <Badge variant="outline" className="text-xs">
+   844→                              {fine.type === FINE_TYPE.RONDA
+   845→                                ? 'Ronda'
+   846→                                : fine.type === FINE_TYPE.JIMPITAN
+   847→                                ? 'Jimpitan'
+   848→                                : 'Lain-lain'}
+   849→                            </Badge>
+   850→                          </TableCell>
+   851→                          <TableCell className="text-xs py-3 max-w-[150px] truncate">
+   852→                            {fine.reason}
+   853→                          </TableCell>
+   854→                          <TableCell className="text-xs py-3 text-right font-medium whitespace-nowrap">
+   855→                            {formatCurrency(fine.amount)}
+   856→                          </TableCell>
+   857→                          <TableCell className="text-xs py-3">
+   858→                            <Badge
+   859→                              className={
+   860→                                fine.status === FINE_STATUS.PAID
+   861→                                  ? 'bg-green-100 text-green-800'
+   862→                                  : 'bg-red-100 text-red-800'
+   863→                              }
+   864→                            >
+   865→                              {fine.status === FINE_STATUS.PAID ? 'Lunas' : 'Belum'}
+   866→                            </Badge>
+   867→                          </TableCell>
+   868→                          {isAdmin && (
+   869→                            <TableCell className="py-3">
+   870→                              {fine.status === FINE_STATUS.UNPAID && (
+   871→                                <Button
+   872→                                  variant="outline"
+   873→                                  size="sm"
+   874→                                  className="h-7 text-xs text-green-700 border-green-200 hover:bg-green-50"
+   875→                                  onClick={() => handleMarkFinePaid(fine.id)}
+   876→                                >
+   877→                                  <CheckCircle2 className="w-3 h-3 mr-1" />
+   878→                                  Lunas
+   879→                                </Button>
+   880→                              )}
+   881→                            </TableCell>
+   882→                          )}
+   883→                        </TableRow>
+   884→                      ))}
+   885→                    </TableBody>
+   886→                  </Table>
+   887→                </div>
+   888→              )}
+   889→            </CardContent>
+   890→          </Card>
+   891→        </TabsContent>
+   892→      </Tabs>
+   893→    </div>
+   894→  );
+   895→}
+   896→

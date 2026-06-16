@@ -7,7 +7,11 @@ import {
   formatDateShort,
   CATEGORY_LABELS,
   TRANSACTION_TYPE,
-  TRANSACTION_CATEGORY,
+  INCOME_CATEGORIES,
+  EXPENSE_CATEGORIES,
+  TRANSFER_CATEGORIES,
+  ACCOUNT_TYPE,
+  ACCOUNT_LABELS,
   FINE_TYPE,
   FINE_STATUS,
 } from '@/lib/constants';
@@ -39,6 +43,7 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Separator } from '@/components/ui/separator';
 import {
   Wallet,
   TrendingUp,
@@ -49,7 +54,13 @@ import {
   AlertTriangle,
   Search,
   X,
+  ArrowRightLeft,
+  Landmark,
+  ArrowUpRight,
+  ArrowDownRight,
+  RefreshCw,
 } from 'lucide-react';
+import { toast } from 'sonner';
 
 // Types
 interface Transaction {
@@ -59,6 +70,7 @@ interface Transaction {
   amount: number;
   description: string;
   date: string;
+  account: string;
   selapananId: string | null;
   createdBy: string;
   createdAt: string;
@@ -68,6 +80,15 @@ interface TransactionSummary {
   totalIncome: number;
   totalExpense: number;
   balance: number;
+  cashIncome: number;
+  cashExpense: number;
+  cashBalance: number;
+  bankIncome: number;
+  bankExpense: number;
+  bankBalance: number;
+  filteredIncome: number;
+  filteredExpense: number;
+  filteredNet: number;
 }
 
 interface Fine {
@@ -109,12 +130,22 @@ export function KeuanganPage({ userId, familyId, isAdmin }: Props) {
     totalIncome: 0,
     totalExpense: 0,
     balance: 0,
+    cashIncome: 0,
+    cashExpense: 0,
+    cashBalance: 0,
+    bankIncome: 0,
+    bankExpense: 0,
+    bankBalance: 0,
+    filteredIncome: 0,
+    filteredExpense: 0,
+    filteredNet: 0,
   });
   const [loading, setLoading] = useState(true);
 
   // Filters
   const [filterType, setFilterType] = useState<string>('all');
   const [filterCategory, setFilterCategory] = useState<string>('all');
+  const [filterAccount, setFilterAccount] = useState<string>('all');
   const [filterFrom, setFilterFrom] = useState('');
   const [filterTo, setFilterTo] = useState('');
 
@@ -123,11 +154,21 @@ export function KeuanganPage({ userId, familyId, isAdmin }: Props) {
   const [txForm, setTxForm] = useState({
     type: 'INCOME',
     category: 'IURAN_BULANAN',
+    account: 'CASH',
     amount: '',
     description: '',
     date: new Date().toISOString().split('T')[0],
   });
   const [txSaving, setTxSaving] = useState(false);
+
+  // Transfer form
+  const [transferForm, setTransferForm] = useState({
+    direction: 'SETOR_BANK' as 'SETOR_BANK' | 'TARIK_BANK',
+    amount: '',
+    description: '',
+    date: new Date().toISOString().split('T')[0],
+  });
+  const [transferSaving, setTransferSaving] = useState(false);
 
   // Fines state
   const [fines, setFines] = useState<Fine[]>([]);
@@ -149,11 +190,30 @@ export function KeuanganPage({ userId, familyId, isAdmin }: Props) {
   // Families for fine form dropdown
   const [families, setFamilies] = useState<Family[]>([]);
 
+  // Active tab
+  const [activeTab, setActiveTab] = useState('transactions');
+
+  // Dynamic category options based on transaction type
+  const getCategoryOptions = useCallback((type: string) => {
+    if (type === 'INCOME') return INCOME_CATEGORIES;
+    if (type === 'EXPENSE') return EXPENSE_CATEGORIES;
+    return [];
+  }, []);
+
+  // Get filter category options (all income + expense combined)
+  const getFilterCategoryOptions = useCallback(() => {
+    if (filterType === 'INCOME') return INCOME_CATEGORIES;
+    if (filterType === 'EXPENSE') return EXPENSE_CATEGORIES;
+    if (filterType === 'TRANSFER') return TRANSFER_CATEGORIES;
+    return [...INCOME_CATEGORIES, ...EXPENSE_CATEGORIES, ...TRANSFER_CATEGORIES];
+  }, [filterType]);
+
   const fetchTransactions = useCallback(async () => {
     try {
       const params = new URLSearchParams();
       if (filterType && filterType !== 'all') params.set('type', filterType);
       if (filterCategory && filterCategory !== 'all') params.set('category', filterCategory);
+      if (filterAccount && filterAccount !== 'all') params.set('account', filterAccount);
       if (filterFrom) params.set('from', filterFrom);
       if (filterTo) params.set('to', filterTo);
 
@@ -163,7 +223,16 @@ export function KeuanganPage({ userId, familyId, isAdmin }: Props) {
       if (res.ok) {
         setTransactions(data.transactions || []);
         setSummary(
-          data.summary || { totalIncome: 0, totalExpense: 0, balance: 0 }
+          data.summary || {
+            totalIncome: 0,
+            totalExpense: 0,
+            balance: 0,
+            cashBalance: 0,
+            bankBalance: 0,
+            filteredIncome: 0,
+            filteredExpense: 0,
+            filteredNet: 0,
+          }
         );
       }
     } catch {
@@ -171,7 +240,7 @@ export function KeuanganPage({ userId, familyId, isAdmin }: Props) {
     } finally {
       setLoading(false);
     }
-  }, [filterType, filterCategory, filterFrom, filterTo]);
+  }, [filterType, filterCategory, filterAccount, filterFrom, filterTo]);
 
   const fetchFines = useCallback(async () => {
     try {
@@ -215,26 +284,38 @@ export function KeuanganPage({ userId, familyId, isAdmin }: Props) {
       return;
     setTxSaving(true);
     try {
+      // Auto-set account for BUNGA_BANK
+      let account = txForm.account;
+      if (txForm.category === 'BUNGA_BANK') {
+        account = 'BANK_BKK';
+      }
+
       const res = await api.post('/transactions', {
         type: txForm.type,
         category: txForm.category,
         amount: parseInt(txForm.amount, 10),
         description: txForm.description,
         date: txForm.date,
+        account,
       });
       if (res.ok) {
+        toast.success('Transaksi berhasil ditambahkan');
         setTxOpen(false);
         setTxForm({
           type: 'INCOME',
           category: 'IURAN_BULANAN',
+          account: 'CASH',
           amount: '',
           description: '',
           date: new Date().toISOString().split('T')[0],
         });
         fetchTransactions();
+      } else {
+        const data = await res.json();
+        toast.error(data.error || 'Gagal menambahkan transaksi');
       }
     } catch {
-      // silently handle
+      toast.error('Gagal menambahkan transaksi');
     } finally {
       setTxSaving(false);
     }
@@ -244,10 +325,48 @@ export function KeuanganPage({ userId, familyId, isAdmin }: Props) {
     try {
       const res = await api.delete(`/transactions?id=${id}`);
       if (res.ok) {
+        toast.success('Transaksi berhasil dihapus');
         fetchTransactions();
+      } else {
+        toast.error('Gagal menghapus transaksi');
       }
     } catch {
-      // silently handle
+      toast.error('Gagal menghapus transaksi');
+    }
+  };
+
+  const handleTransfer = async (direction: 'SETOR_BANK' | 'TARIK_BANK') => {
+    if (!transferForm.amount || !transferForm.description || !transferForm.date) return;
+    setTransferSaving(true);
+    try {
+      const res = await api.post('/transactions', {
+        type: 'TRANSFER',
+        category: direction,
+        amount: parseInt(transferForm.amount, 10),
+        description: transferForm.description,
+        date: transferForm.date,
+      });
+      if (res.ok) {
+        toast.success(
+          direction === 'SETOR_BANK'
+            ? 'Setoran ke bank berhasil'
+            : 'Penarikan dari bank berhasil'
+        );
+        setTransferForm({
+          direction: 'SETOR_BANK',
+          amount: '',
+          description: '',
+          date: new Date().toISOString().split('T')[0],
+        });
+        fetchTransactions();
+      } else {
+        const data = await res.json();
+        toast.error(data.error || 'Gagal melakukan transfer');
+      }
+    } catch {
+      toast.error('Gagal melakukan transfer');
+    } finally {
+      setTransferSaving(false);
     }
   };
 
@@ -265,6 +384,7 @@ export function KeuanganPage({ userId, familyId, isAdmin }: Props) {
         date: fineForm.date,
       });
       if (res.ok) {
+        toast.success('Denda berhasil ditambahkan');
         setFineOpen(false);
         setFineForm({
           userId: '',
@@ -277,7 +397,7 @@ export function KeuanganPage({ userId, familyId, isAdmin }: Props) {
         fetchFines();
       }
     } catch {
-      // silently handle
+      toast.error('Gagal menambahkan denda');
     } finally {
       setFineSaving(false);
     }
@@ -287,10 +407,11 @@ export function KeuanganPage({ userId, familyId, isAdmin }: Props) {
     try {
       const res = await api.put('/fines', { id, status: 'PAID' });
       if (res.ok) {
+        toast.success('Denda ditandai lunas');
         fetchFines();
       }
     } catch {
-      // silently handle
+      toast.error('Gagal mengubah status denda');
     }
   };
 
@@ -308,21 +429,54 @@ export function KeuanganPage({ userId, familyId, isAdmin }: Props) {
   const clearFilters = () => {
     setFilterType('all');
     setFilterCategory('all');
+    setFilterAccount('all');
     setFilterFrom('');
     setFilterTo('');
   };
 
-  const hasActiveFilters = filterType !== 'all' || filterCategory !== 'all' || filterFrom || filterTo;
+  const hasActiveFilters = filterType !== 'all' || filterCategory !== 'all' || filterAccount !== 'all' || filterFrom || filterTo;
 
-  // Category options for transaction type
-  const categoryOptions = Object.entries(CATEGORY_LABELS);
+  // Get type badge styling
+  const getTypeBadge = (tx: Transaction) => {
+    if (tx.type === 'TRANSFER') {
+      return { className: 'bg-amber-100 text-amber-800', label: 'Transfer' };
+    }
+    if (tx.type === 'INCOME') {
+      return { className: 'bg-green-100 text-green-800', label: 'Masuk' };
+    }
+    return { className: 'bg-red-100 text-red-800', label: 'Keluar' };
+  };
+
+  // Get amount display for transaction
+  const getAmountDisplay = (tx: Transaction) => {
+    if (tx.type === 'TRANSFER') {
+      // For transfer, show the direction based on the account
+      // SETOR_BANK from CASH account = money going out (shown as -)
+      // SETOR_BANK from BANK_BKK account = money coming in (shown as +)
+      // TARIK_BANK from BANK_BKK account = money going out (shown as -)
+      // TARIK_BANK from CASH account = money coming in (shown as +)
+      if (tx.description.startsWith('[Transfer]')) {
+        // Counterpart entry - it's the receiving end
+        return { text: `+ ${formatCurrency(tx.amount)}`, className: 'text-green-700' };
+      }
+      // Source entry - it's the sending end
+      return { text: `- ${formatCurrency(tx.amount)}`, className: 'text-red-700' };
+    }
+    if (tx.type === 'INCOME') {
+      return { text: `+ ${formatCurrency(tx.amount)}`, className: 'text-green-700' };
+    }
+    return { text: `- ${formatCurrency(tx.amount)}`, className: 'text-red-700' };
+  };
+
+  // Filter transfer transactions for the transfer tab
+  const transferTransactions = transactions.filter((tx) => tx.type === 'TRANSFER');
 
   if (loading) {
     return (
       <div className="space-y-6">
-        <h2 className="text-xl font-bold text-slate-800">Keuangan</h2>
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-          {[1, 2, 3].map((i) => (
+        <h2 className="text-xl font-bold text-slate-800">Keuangan RT</h2>
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+          {[1, 2, 3, 4].map((i) => (
             <Card key={i} className="rounded-xl shadow-sm border border-slate-200 animate-pulse">
               <CardContent className="p-5">
                 <div className="h-4 bg-slate-200 rounded w-1/2 mb-3" />
@@ -337,9 +491,10 @@ export function KeuanganPage({ userId, familyId, isAdmin }: Props) {
 
   return (
     <div className="space-y-6">
+      {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-xl font-bold text-slate-800">Keuangan</h2>
+          <h2 className="text-xl font-bold text-slate-800">Keuangan RT</h2>
           <p className="text-sm text-slate-500 mt-1">Kelola keuangan dan denda RT</p>
         </div>
         {isAdmin && (
@@ -359,7 +514,16 @@ export function KeuanganPage({ userId, familyId, isAdmin }: Props) {
                   <Label>Jenis</Label>
                   <Select
                     value={txForm.type}
-                    onValueChange={(v) => setTxForm({ ...txForm, type: v })}
+                    onValueChange={(v) => {
+                      const cats = getCategoryOptions(v);
+                      setTxForm({
+                        ...txForm,
+                        type: v,
+                        category: cats[0] || 'IURAN_BULANAN',
+                        // Reset account to CASH if switching away from BUNGA_BANK
+                        account: v === 'EXPENSE' ? txForm.account : txForm.account,
+                      });
+                    }}
                   >
                     <SelectTrigger className="h-10 w-full">
                       <SelectValue />
@@ -375,19 +539,46 @@ export function KeuanganPage({ userId, familyId, isAdmin }: Props) {
                   <Label>Kategori</Label>
                   <Select
                     value={txForm.category}
-                    onValueChange={(v) => setTxForm({ ...txForm, category: v })}
+                    onValueChange={(v) => {
+                      setTxForm({
+                        ...txForm,
+                        category: v,
+                        // Auto-set account for BUNGA_BANK
+                        account: v === 'BUNGA_BANK' ? 'BANK_BKK' : txForm.account === 'BANK_BKK' && v !== 'BUNGA_BANK' ? 'CASH' : txForm.account,
+                      });
+                    }}
                   >
                     <SelectTrigger className="h-10 w-full">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      {categoryOptions.map(([key, label]) => (
+                      {getCategoryOptions(txForm.type).map((key) => (
                         <SelectItem key={key} value={key}>
-                          {label}
+                          {CATEGORY_LABELS[key]}
                         </SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Akun</Label>
+                  <Select
+                    value={txForm.category === 'BUNGA_BANK' ? 'BANK_BKK' : txForm.account}
+                    onValueChange={(v) => setTxForm({ ...txForm, account: v })}
+                    disabled={txForm.category === 'BUNGA_BANK'}
+                  >
+                    <SelectTrigger className="h-10 w-full">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="CASH">{ACCOUNT_LABELS.CASH}</SelectItem>
+                      <SelectItem value="BANK_BKK">{ACCOUNT_LABELS.BANK_BKK}</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  {txForm.category === 'BUNGA_BANK' && (
+                    <p className="text-xs text-slate-500">Otomatis: Tabungan BKK</p>
+                  )}
                 </div>
 
                 <div className="space-y-2">
@@ -440,49 +631,77 @@ export function KeuanganPage({ userId, familyId, isAdmin }: Props) {
       </div>
 
       {/* Stat Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <Card className="rounded-xl shadow-sm border border-green-200 bg-green-50/50">
-          <CardContent className="p-5">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-lg bg-green-100 flex items-center justify-center">
-                <TrendingUp className="w-5 h-5 text-green-600" />
-              </div>
-              <div>
-                <p className="text-xs text-green-600 font-medium">Pemasukan</p>
-                <p className="text-lg font-bold text-green-700">
-                  {formatCurrency(summary.totalIncome)}
-                </p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card className="rounded-xl shadow-sm border border-red-200 bg-red-50/50">
-          <CardContent className="p-5">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-lg bg-red-100 flex items-center justify-center">
-                <TrendingDown className="w-5 h-5 text-red-600" />
-              </div>
-              <div>
-                <p className="text-xs text-red-600 font-medium">Pengeluaran</p>
-                <p className="text-lg font-bold text-red-700">
-                  {formatCurrency(summary.totalExpense)}
-                </p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        {/* Saldo Total - Dark Card */}
         <Card className="rounded-xl shadow-sm border border-slate-300 bg-slate-800">
-          <CardContent className="p-5">
+          <CardContent className="p-4 sm:p-5">
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-lg bg-slate-700 flex items-center justify-center">
+              <div className="w-10 h-10 rounded-lg bg-slate-700 flex items-center justify-center shrink-0">
                 <Wallet className="w-5 h-5 text-slate-200" />
               </div>
-              <div>
-                <p className="text-xs text-slate-300 font-medium">Saldo</p>
-                <p className="text-lg font-bold text-white">
-                  {formatCurrency(summary.balance)}
+              <div className="min-w-0">
+                <p className="text-xs text-slate-300 font-medium">Saldo Total</p>
+                <p className="text-base sm:text-lg font-bold text-white truncate">
+                  {formatCurrency(summary.cashBalance + summary.bankBalance)}
+                </p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Kas Tunai */}
+        <Card className="rounded-xl shadow-sm border border-emerald-200 bg-emerald-50/50">
+          <CardContent className="p-4 sm:p-5">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-lg bg-emerald-100 flex items-center justify-center shrink-0">
+                <Wallet className="w-5 h-5 text-emerald-600" />
+              </div>
+              <div className="min-w-0">
+                <p className="text-xs text-emerald-600 font-medium">Kas Tunai</p>
+                <p className="text-base sm:text-lg font-bold text-emerald-700 truncate">
+                  {formatCurrency(summary.cashBalance)}
+                </p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Tabungan BKK */}
+        <Card className="rounded-xl shadow-sm border border-sky-200 bg-sky-50/50">
+          <CardContent className="p-4 sm:p-5">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-lg bg-sky-100 flex items-center justify-center shrink-0">
+                <Landmark className="w-5 h-5 text-sky-600" />
+              </div>
+              <div className="min-w-0">
+                <p className="text-xs text-sky-600 font-medium">Tabungan BKK</p>
+                <p className="text-base sm:text-lg font-bold text-sky-700 truncate">
+                  {formatCurrency(summary.bankBalance)}
+                </p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Net Periode */}
+        <Card className="rounded-xl shadow-sm border border-slate-200">
+          <CardContent className="p-4 sm:p-5">
+            <div className="flex items-center gap-3">
+              <div className={`w-10 h-10 rounded-lg flex items-center justify-center shrink-0 ${
+                summary.filteredNet >= 0 ? 'bg-green-100' : 'bg-red-100'
+              }`}>
+                {summary.filteredNet >= 0 ? (
+                  <TrendingUp className="w-5 h-5 text-green-600" />
+                ) : (
+                  <TrendingDown className="w-5 h-5 text-red-600" />
+                )}
+              </div>
+              <div className="min-w-0">
+                <p className="text-xs text-slate-500 font-medium">Net Periode</p>
+                <p className={`text-base sm:text-lg font-bold truncate ${
+                  summary.filteredNet >= 0 ? 'text-green-700' : 'text-red-700'
+                }`}>
+                  {formatCurrency(summary.filteredNet)}
                 </p>
               </div>
             </div>
@@ -491,13 +710,14 @@ export function KeuanganPage({ userId, familyId, isAdmin }: Props) {
       </div>
 
       {/* Tabs */}
-      <Tabs defaultValue="transactions" className="space-y-4">
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
         <TabsList>
           <TabsTrigger value="transactions">Transaksi</TabsTrigger>
+          {isAdmin && <TabsTrigger value="transfer">Transfer</TabsTrigger>}
           <TabsTrigger value="fines">Denda</TabsTrigger>
         </TabsList>
 
-        {/* Transactions Tab */}
+        {/* ============ Tab 1: Transaksi ============ */}
         <TabsContent value="transactions" className="space-y-4">
           {/* Filters */}
           <Card className="rounded-xl shadow-sm border border-slate-200">
@@ -505,7 +725,10 @@ export function KeuanganPage({ userId, familyId, isAdmin }: Props) {
               <div className="flex flex-wrap items-end gap-3">
                 <div className="space-y-1">
                   <Label className="text-xs text-slate-500">Jenis</Label>
-                  <Select value={filterType} onValueChange={setFilterType}>
+                  <Select value={filterType} onValueChange={(v) => {
+                    setFilterType(v);
+                    setFilterCategory('all');
+                  }}>
                     <SelectTrigger className="h-9 w-[140px]">
                       <SelectValue />
                     </SelectTrigger>
@@ -513,6 +736,7 @@ export function KeuanganPage({ userId, familyId, isAdmin }: Props) {
                       <SelectItem value="all">Semua</SelectItem>
                       <SelectItem value="INCOME">Pemasukan</SelectItem>
                       <SelectItem value="EXPENSE">Pengeluaran</SelectItem>
+                      <SelectItem value="TRANSFER">Transfer</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
@@ -525,11 +749,25 @@ export function KeuanganPage({ userId, familyId, isAdmin }: Props) {
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="all">Semua</SelectItem>
-                      {categoryOptions.map(([key, label]) => (
+                      {getFilterCategoryOptions().map((key) => (
                         <SelectItem key={key} value={key}>
-                          {label}
+                          {CATEGORY_LABELS[key]}
                         </SelectItem>
                       ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-1">
+                  <Label className="text-xs text-slate-500">Akun</Label>
+                  <Select value={filterAccount} onValueChange={setFilterAccount}>
+                    <SelectTrigger className="h-9 w-[150px]">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">Semua</SelectItem>
+                      <SelectItem value="CASH">{ACCOUNT_LABELS.CASH}</SelectItem>
+                      <SelectItem value="BANK_BKK">{ACCOUNT_LABELS.BANK_BKK}</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
@@ -540,7 +778,7 @@ export function KeuanganPage({ userId, familyId, isAdmin }: Props) {
                     type="date"
                     value={filterFrom}
                     onChange={(e) => setFilterFrom(e.target.value)}
-                    className="h-9 w-[150px]"
+                    className="h-9 w-[140px]"
                   />
                 </div>
 
@@ -550,7 +788,7 @@ export function KeuanganPage({ userId, familyId, isAdmin }: Props) {
                     type="date"
                     value={filterTo}
                     onChange={(e) => setFilterTo(e.target.value)}
-                    className="h-9 w-[150px]"
+                    className="h-9 w-[140px]"
                   />
                 </div>
 
@@ -578,12 +816,14 @@ export function KeuanganPage({ userId, familyId, isAdmin }: Props) {
                   )}
                 </div>
               ) : (
-                <div className="overflow-x-auto">
+                <div className="overflow-x-auto max-h-[500px] overflow-y-auto">
                   <Table>
                     <TableHeader>
                       <TableRow>
                         <TableHead className="text-xs h-9">Tanggal</TableHead>
+                        <TableHead className="text-xs h-9">Jenis</TableHead>
                         <TableHead className="text-xs h-9">Kategori</TableHead>
+                        <TableHead className="text-xs h-9">Akun</TableHead>
                         <TableHead className="text-xs h-9">Keterangan</TableHead>
                         <TableHead className="text-xs h-9 text-right">Jumlah</TableHead>
                         {isAdmin && (
@@ -592,46 +832,70 @@ export function KeuanganPage({ userId, familyId, isAdmin }: Props) {
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {transactions.map((tx) => (
-                        <TableRow key={tx.id}>
-                          <TableCell className="text-xs py-3 whitespace-nowrap">
-                            {formatDateShort(tx.date)}
-                          </TableCell>
-                          <TableCell className="text-xs py-3">
-                            <Badge
-                              className={
-                                tx.type === 'INCOME'
-                                  ? 'bg-green-100 text-green-800'
-                                  : 'bg-red-100 text-red-800'
-                              }
-                            >
-                              {CATEGORY_LABELS[tx.category] || tx.category}
-                            </Badge>
-                          </TableCell>
-                          <TableCell className="text-xs py-3 max-w-[200px] truncate">
-                            {tx.description}
-                          </TableCell>
-                          <TableCell
-                            className={`text-xs py-3 text-right font-medium whitespace-nowrap ${
-                              tx.type === 'INCOME' ? 'text-green-700' : 'text-red-700'
-                            }`}
-                          >
-                            {tx.type === 'INCOME' ? '+' : '-'} {formatCurrency(tx.amount)}
-                          </TableCell>
-                          {isAdmin && (
-                            <TableCell className="py-3">
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                className="h-7 w-7 p-0 text-slate-400 hover:text-red-500"
-                                onClick={() => handleDeleteTransaction(tx.id)}
-                              >
-                                <Trash2 className="w-3.5 h-3.5" />
-                              </Button>
+                      {transactions.map((tx) => {
+                        const typeBadge = getTypeBadge(tx);
+                        const amountDisplay = getAmountDisplay(tx);
+                        const isTransferEntry = tx.type === 'TRANSFER';
+                        const isCounterpart = tx.description.startsWith('[Transfer]');
+
+                        return (
+                          <TableRow key={tx.id} className={isCounterpart ? 'bg-amber-50/50' : ''}>
+                            <TableCell className="text-xs py-3 whitespace-nowrap">
+                              {formatDateShort(tx.date)}
                             </TableCell>
-                          )}
-                        </TableRow>
-                      ))}
+                            <TableCell className="text-xs py-3">
+                              <Badge className={typeBadge.className}>
+                                {isTransferEntry && <ArrowRightLeft className="w-3 h-3 mr-1" />}
+                                {typeBadge.label}
+                              </Badge>
+                            </TableCell>
+                            <TableCell className="text-xs py-3">
+                              <Badge variant="outline" className="text-xs">
+                                {CATEGORY_LABELS[tx.category] || tx.category}
+                              </Badge>
+                            </TableCell>
+                            <TableCell className="text-xs py-3">
+                              <div className="flex items-center gap-1.5">
+                                {tx.account === 'BANK_BKK' ? (
+                                  <Landmark className="w-3 h-3 text-sky-500" />
+                                ) : (
+                                  <Wallet className="w-3 h-3 text-emerald-500" />
+                                )}
+                                <span className="text-slate-600">
+                                  {ACCOUNT_LABELS[tx.account] || tx.account}
+                                </span>
+                              </div>
+                            </TableCell>
+                            <TableCell className="text-xs py-3 max-w-[200px] truncate">
+                              {isCounterpart ? (
+                                <span className="flex items-center gap-1">
+                                  <RefreshCw className="w-3 h-3 text-amber-500 shrink-0" />
+                                  <span className="truncate">{tx.description.replace('[Transfer] ', '')}</span>
+                                </span>
+                              ) : (
+                                tx.description
+                              )}
+                            </TableCell>
+                            <TableCell
+                              className={`text-xs py-3 text-right font-medium whitespace-nowrap ${amountDisplay.className}`}
+                            >
+                              {amountDisplay.text}
+                            </TableCell>
+                            {isAdmin && (
+                              <TableCell className="py-3">
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className="h-7 w-7 p-0 text-slate-400 hover:text-red-500"
+                                  onClick={() => handleDeleteTransaction(tx.id)}
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </Button>
+                              </TableCell>
+                            )}
+                          </TableRow>
+                        );
+                      })}
                     </TableBody>
                   </Table>
                 </div>
@@ -640,7 +904,226 @@ export function KeuanganPage({ userId, familyId, isAdmin }: Props) {
           </Card>
         </TabsContent>
 
-        {/* Fines Tab */}
+        {/* ============ Tab 2: Transfer (Admin only) ============ */}
+        {isAdmin && (
+          <TabsContent value="transfer" className="space-y-4">
+            {/* Transfer Cards */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {/* Setor ke Bank */}
+              <Card className="rounded-xl shadow-sm border border-amber-200 bg-amber-50/30">
+                <CardHeader className="pb-3 pt-5 px-5">
+                  <CardTitle className="text-sm font-semibold flex items-center gap-2 text-amber-800">
+                    <ArrowUpRight className="w-4 h-4" />
+                    Setor ke Bank
+                  </CardTitle>
+                  <p className="text-xs text-slate-500 mt-1">
+                    Kas Tunai → Tabungan BKK
+                  </p>
+                </CardHeader>
+                <CardContent className="px-5 pb-5 space-y-3">
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">Jumlah (Rp)</Label>
+                    <Input
+                      type="number"
+                      placeholder="0"
+                      value={transferForm.direction === 'SETOR_BANK' ? transferForm.amount : ''}
+                      onChange={(e) => setTransferForm({ ...transferForm, direction: 'SETOR_BANK', amount: e.target.value })}
+                      className="h-10"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">Keterangan</Label>
+                    <Input
+                      placeholder="Mis: Setoran iuran bulanan"
+                      value={transferForm.direction === 'SETOR_BANK' ? transferForm.description : ''}
+                      onChange={(e) => setTransferForm({ ...transferForm, direction: 'SETOR_BANK', description: e.target.value })}
+                      className="h-10"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">Tanggal</Label>
+                    <Input
+                      type="date"
+                      value={transferForm.direction === 'SETOR_BANK' ? transferForm.date : new Date().toISOString().split('T')[0]}
+                      onChange={(e) => setTransferForm({ ...transferForm, direction: 'SETOR_BANK', date: e.target.value })}
+                      className="h-10"
+                    />
+                  </div>
+                  <Button
+                    className="w-full h-10 bg-amber-600 hover:bg-amber-700 text-white mt-1"
+                    disabled={transferSaving || (transferForm.direction === 'SETOR_BANK' && (!transferForm.amount || !transferForm.description))}
+                    onClick={() => handleTransfer('SETOR_BANK')}
+                  >
+                    <ArrowUpRight className="w-4 h-4 mr-1" />
+                    Setor ke Bank
+                  </Button>
+                </CardContent>
+              </Card>
+
+              {/* Tarik dari Bank */}
+              <Card className="rounded-xl shadow-sm border border-teal-200 bg-teal-50/30">
+                <CardHeader className="pb-3 pt-5 px-5">
+                  <CardTitle className="text-sm font-semibold flex items-center gap-2 text-teal-800">
+                    <ArrowDownRight className="w-4 h-4" />
+                    Tarik dari Bank
+                  </CardTitle>
+                  <p className="text-xs text-slate-500 mt-1">
+                    Tabungan BKK → Kas Tunai
+                  </p>
+                </CardHeader>
+                <CardContent className="px-5 pb-5 space-y-3">
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">Jumlah (Rp)</Label>
+                    <Input
+                      type="number"
+                      placeholder="0"
+                      value={transferForm.direction === 'TARIK_BANK' ? transferForm.amount : ''}
+                      onChange={(e) => setTransferForm({ ...transferForm, direction: 'TARIK_BANK', amount: e.target.value })}
+                      className="h-10"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">Keterangan</Label>
+                    <Input
+                      placeholder="Mis: Penarikan untuk pembayaran"
+                      value={transferForm.direction === 'TARIK_BANK' ? transferForm.description : ''}
+                      onChange={(e) => setTransferForm({ ...transferForm, direction: 'TARIK_BANK', description: e.target.value })}
+                      className="h-10"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">Tanggal</Label>
+                    <Input
+                      type="date"
+                      value={transferForm.direction === 'TARIK_BANK' ? transferForm.date : new Date().toISOString().split('T')[0]}
+                      onChange={(e) => setTransferForm({ ...transferForm, direction: 'TARIK_BANK', date: e.target.value })}
+                      className="h-10"
+                    />
+                  </div>
+                  <Button
+                    className="w-full h-10 bg-teal-600 hover:bg-teal-700 text-white mt-1"
+                    disabled={transferSaving || (transferForm.direction === 'TARIK_BANK' && (!transferForm.amount || !transferForm.description))}
+                    onClick={() => handleTransfer('TARIK_BANK')}
+                  >
+                    <ArrowDownRight className="w-4 h-4 mr-1" />
+                    Tarik dari Bank
+                  </Button>
+                </CardContent>
+              </Card>
+            </div>
+
+            {/* Balance Quick View */}
+            <div className="grid grid-cols-2 gap-4">
+              <div className="flex items-center gap-3 p-4 bg-emerald-50 rounded-xl border border-emerald-200">
+                <Wallet className="w-5 h-5 text-emerald-600" />
+                <div>
+                  <p className="text-xs text-emerald-600 font-medium">Sisa Kas Tunai</p>
+                  <p className="text-sm font-bold text-emerald-700">{formatCurrency(summary.cashBalance)}</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-3 p-4 bg-sky-50 rounded-xl border border-sky-200">
+                <Landmark className="w-5 h-5 text-sky-600" />
+                <div>
+                  <p className="text-xs text-sky-600 font-medium">Sisa Tabungan BKK</p>
+                  <p className="text-sm font-bold text-sky-700">{formatCurrency(summary.bankBalance)}</p>
+                </div>
+              </div>
+            </div>
+
+            {/* Transfer History */}
+            <Card className="rounded-xl shadow-sm border border-slate-200">
+              <CardHeader className="pb-3 pt-4 px-5">
+                <CardTitle className="text-sm font-semibold text-slate-700 flex items-center gap-2">
+                  <ArrowRightLeft className="w-4 h-4 text-amber-600" />
+                  Riwayat Transfer
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="p-0">
+                {transferTransactions.length === 0 ? (
+                  <div className="p-10 text-center">
+                    <ArrowRightLeft className="w-10 h-10 text-slate-300 mx-auto mb-3" />
+                    <p className="text-sm text-slate-500">Belum ada riwayat transfer</p>
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto max-h-[400px] overflow-y-auto">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead className="text-xs h-9">Tanggal</TableHead>
+                          <TableHead className="text-xs h-9">Jenis</TableHead>
+                          <TableHead className="text-xs h-9">Akun</TableHead>
+                          <TableHead className="text-xs h-9">Keterangan</TableHead>
+                          <TableHead className="text-xs h-9 text-right">Jumlah</TableHead>
+                          <TableHead className="text-xs h-9 w-12" />
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {transferTransactions.map((tx) => {
+                          const isCounterpart = tx.description.startsWith('[Transfer]');
+                          const amountDisplay = getAmountDisplay(tx);
+
+                          return (
+                            <TableRow key={tx.id} className={isCounterpart ? 'bg-amber-50/50' : ''}>
+                              <TableCell className="text-xs py-3 whitespace-nowrap">
+                                {formatDateShort(tx.date)}
+                              </TableCell>
+                              <TableCell className="text-xs py-3">
+                                <Badge className="bg-amber-100 text-amber-800">
+                                  {tx.category === 'SETOR_BANK' ? (
+                                    <><ArrowUpRight className="w-3 h-3 mr-1" />Setor</>
+                                  ) : (
+                                    <><ArrowDownRight className="w-3 h-3 mr-1" />Tarik</>
+                                  )}
+                                </Badge>
+                              </TableCell>
+                              <TableCell className="text-xs py-3">
+                                <div className="flex items-center gap-1.5">
+                                  {tx.account === 'BANK_BKK' ? (
+                                    <Landmark className="w-3 h-3 text-sky-500" />
+                                  ) : (
+                                    <Wallet className="w-3 h-3 text-emerald-500" />
+                                  )}
+                                  <span className="text-slate-600">
+                                    {ACCOUNT_LABELS[tx.account] || tx.account}
+                                  </span>
+                                </div>
+                              </TableCell>
+                              <TableCell className="text-xs py-3 max-w-[200px] truncate">
+                                {isCounterpart ? (
+                                  <span className="flex items-center gap-1">
+                                    <RefreshCw className="w-3 h-3 text-amber-500 shrink-0" />
+                                    <span className="truncate">{tx.description.replace('[Transfer] ', '')}</span>
+                                  </span>
+                                ) : (
+                                  tx.description
+                                )}
+                              </TableCell>
+                              <TableCell className={`text-xs py-3 text-right font-medium whitespace-nowrap ${amountDisplay.className}`}>
+                                {amountDisplay.text}
+                              </TableCell>
+                              <TableCell className="py-3">
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className="h-7 w-7 p-0 text-slate-400 hover:text-red-500"
+                                  onClick={() => handleDeleteTransaction(tx.id)}
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </Button>
+                              </TableCell>
+                            </TableRow>
+                          );
+                        })}
+                      </TableBody>
+                    </Table>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+        )}
+
+        {/* ============ Tab 3: Denda ============ */}
         <TabsContent value="fines" className="space-y-4">
           {/* Fine Summary Cards */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
